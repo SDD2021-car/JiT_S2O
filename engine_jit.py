@@ -6,11 +6,14 @@ import shutil
 import torch
 import numpy as np
 import cv2
+import torchvision.transforms as transforms
 
 import util.misc as misc
 import util.lr_sched as lr_sched
 import torch_fidelity
 import copy
+
+from util.datasets import ImageDirDataset
 
 
 def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, epoch, log_writer=None, args=None):
@@ -25,17 +28,19 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
     if log_writer is not None:
         print('log_dir: {}'.format(log_writer.log_dir))
 
-    for data_iter_step, (x, labels) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    for data_iter_step, (sar_img, opt_img) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
         # per iteration (instead of per epoch) lr scheduler
         lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, args)
 
         # normalize image to [-1, 1]
-        x = x.to(device, non_blocking=True).to(torch.float32).div_(255)
-        x = x * 2.0 - 1.0
-        labels = labels.to(device, non_blocking=True)
+        sar_img = sar_img.to(device, non_blocking=True).to(torch.float32).div_(255)
+        sar_img = sar_img * 2.0 - 1.0
+        opt_img = opt_img.to(device, non_blocking=True).to(torch.float32).div_(255)
+        opt_img = opt_img * 2.0 - 1.0
+        labels = torch.zeros(opt_img.size(0), device=device, dtype=torch.long)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            loss = model(x, labels)
+            loss = model(opt_img, sar_img, labels)
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):
@@ -65,11 +70,28 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
 
 
 def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
-
     model_without_ddp.eval()
     world_size = misc.get_world_size()
     local_rank = misc.get_rank()
-    num_steps = args.num_images // (batch_size * world_size) + 1
+
+    transform_eval = transforms.Compose([
+        transforms.Resize((args.img_size, args.img_size)),
+        transforms.PILToTensor()
+    ])
+    sar_dataset = ImageDirDataset(args.sar_test_path, transform=transform_eval, mode="L")
+    sampler = torch.utils.data.DistributedSampler(
+        sar_dataset, num_replicas=world_size, rank=local_rank, shuffle=False
+    )
+    data_loader = torch.utils.data.DataLoader(
+        sar_dataset,
+        sampler=sampler,
+        batch_size=batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        drop_last=False,
+    )
+    num_images = min(args.num_images, len(sar_dataset))
+    num_steps = (num_images // (batch_size * world_size)) + 1
 
     # Construct the folder name for saving generated images.
     save_folder = os.path.join(
@@ -92,22 +114,19 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     print("Switch to ema")
     model_without_ddp.load_state_dict(ema_state_dict)
 
-    # ensure that the number of images per class is equal.
-    class_num = args.class_num
-    assert args.num_images % class_num == 0, "Number of images per class must be the same"
-    class_label_gen_world = np.arange(0, class_num).repeat(args.num_images // class_num)
-    class_label_gen_world = np.hstack([class_label_gen_world, np.zeros(50000)])
-
-    for i in range(num_steps):
+    img_count = 0
+    for i, (sar_img, _sar_name) in enumerate(data_loader):
+        if img_count >= num_images:
+            break
         print("Generation step {}/{}".format(i, num_steps))
 
-        start_idx = world_size * batch_size * i + local_rank * batch_size
-        end_idx = start_idx + batch_size
-        labels_gen = class_label_gen_world[start_idx:end_idx]
-        labels_gen = torch.Tensor(labels_gen).long().cuda()
+        sar_img = sar_img.to(torch.device(args.device))
+        sar_img = sar_img.to(torch.float32).div_(255)
+        sar_img = sar_img * 2.0 - 1.0
+        labels_gen = torch.zeros(sar_img.size(0), device=sar_img.device, dtype=torch.long)
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            sampled_images = model_without_ddp.generate(labels_gen)
+            sampled_images = model_without_ddp.generate(sar_img, labels_gen)
 
         torch.distributed.barrier()
 
@@ -117,12 +136,13 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
 
         # distributed save images
         for b_id in range(sampled_images.size(0)):
-            img_id = i * sampled_images.size(0) * world_size + local_rank * sampled_images.size(0) + b_id
-            if img_id >= args.num_images:
+            img_id = img_count + b_id
+            if img_id >= num_images:
                 break
             gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
             gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
             cv2.imwrite(os.path.join(save_folder, '{}.png'.format(str(img_id).zfill(5))), gen_img)
+        img_count += sampled_images.size(0)
 
     torch.distributed.barrier()
 
