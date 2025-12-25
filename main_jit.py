@@ -4,6 +4,7 @@ import numpy as np
 import os
 import time
 from pathlib import Path
+import tqdm
 
 import torch
 import torch.backends.cudnn as cudnn
