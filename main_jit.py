@@ -37,7 +37,7 @@ def get_args_parser():
                         help='Batch size per GPU (effective batch size = batch_size * # GPUs)')
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='Learning rate (absolute)')
-    parser.add_argument('--blr', type=float, default=5e-5, metavar='LR',
+    parser.add_argument('--blr', type=float, default=1.6e-3, metavar='LR',
                         help='Base learning rate: absolute_lr = base_lr * total_batch_size / 256')
     parser.add_argument('--min_lr', type=float, default=0., metavar='LR',
                         help='Minimum LR for cyclic schedulers that hit 0')
