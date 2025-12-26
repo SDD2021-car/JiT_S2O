@@ -30,7 +30,7 @@ def get_args_parser():
     parser.add_argument('--proj_dropout', type=float, default=0.0, help='Projection dropout rate')
 
     # training
-    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--epochs', default=650, type=int)
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='Epochs to warm up LR')
     parser.add_argument('--batch_size', default=128, type=int,
