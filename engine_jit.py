@@ -115,7 +115,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     model_without_ddp.load_state_dict(ema_state_dict)
 
     img_count = 0
-    for i, (sar_img, _sar_name) in enumerate(data_loader):
+    for i, (sar_img, sar_names) in enumerate(data_loader):
         if img_count >= num_images:
             break
         print("Generation step {}/{}".format(i, num_steps))
@@ -141,7 +141,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
                 break
             gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
             gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
-            cv2.imwrite(os.path.join(save_folder, '{}.png'.format(str(img_id).zfill(5))), gen_img)
+            cv2.imwrite(os.path.join(save_folder, sar_names[b_id]), gen_img)
         img_count += sampled_images.size(0)
 
     torch.distributed.barrier()
