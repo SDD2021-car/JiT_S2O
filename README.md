@@ -16,3 +16,5 @@ CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master_port=29503 main_jit.
   --output_dir /NAS_data/hjf/JiTcolor/outputs/SAR2Opt \
   --img_size 512 \
   --gen_bsz 8
+
+CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master-port=29506 main_jit.py --output_dir "/NAS_data/hjf/JiTcolor/checkpoints/GF3" --sar_train_path="/NAS_data/yjy/GF3_High_Res/trainA" --opt_train_path="/NAS_data/yjy/GF3_High_Res/trainB" --sar_test_path="/NAS_data/yjy/GF3_High_Res/testA" --opt_test_path="/NAS_data/yjy/GF3_High_Res/testB" --img_size=256
