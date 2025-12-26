@@ -85,13 +85,13 @@ def get_args_parser():
                         help='Generation batch size')
 
     # dataset
-    parser.add_argument('--sar_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/train/A', type=str,
+    parser.add_argument('--sar_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA', type=str,
                         help='Path to the SAR training dataset')
     parser.add_argument('--opt_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB', type=str,
                         help='Path to the optical training dataset')
-    parser.add_argument('--sar_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/test/A', type=str,
+    parser.add_argument('--sar_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/testA', type=str,
                         help='Path to the SAR testing dataset')
-    parser.add_argument('--opt_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/test/B', type=str,
+    parser.add_argument('--opt_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/testB', type=str,
                         help='Path to the optical testing dataset')
     parser.add_argument('--class_num', default=1, type=int)
 
