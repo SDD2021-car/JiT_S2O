@@ -175,6 +175,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
         log_writer.add_scalar('fid{}'.format(postfix), fid, epoch)
         log_writer.add_scalar('is{}'.format(postfix), inception_score, epoch)
         print("FID: {:.4f}, Inception Score: {:.4f}".format(fid, inception_score))
-        shutil.rmtree(save_folder)
+        if not args.keep_outputs:
+            shutil.rmtree(save_folder)
 
     torch.distributed.barrier()
