@@ -24,3 +24,7 @@ CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master_port=29503 main_jit.
 ### Inference on GF3：
 
 CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master_port=29504 main_jit.py --evaluate_gen --resume /NAS_data/hjf/JiTcolor/checkpoints/GF3 --sar_test_path /NAS_data/yjy/GF3_High_Res/testA --output_dir /NAS_data/hjf/JiTcolor/outputs/GF3/round1 --img_size 256 --gen_bsz 8 --keep_outputs
+
+### Inference on SEN-SCENE：
+
+CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 --master_port=29505 main_jit.py --evaluate_gen --resume /NAS_data/hjf/JiTcolor/checkpoints/scene --sar_test_path /data/hjf/Dataset/SEN12_Scene/testA --output_dir /NAS_data/hjf/JiTcolor/outputs/scene/round1 --img_size 256 --gen_bsz 8 --keep_outputs
