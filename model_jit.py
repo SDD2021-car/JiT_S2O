@@ -270,7 +270,7 @@ class MapperBlock(nn.Module):
 class FrozenDinoV3(nn.Module):
     def __init__(self, model_name="dinov3_vitl14", repo="facebookresearch/dinov3", pretrained=True, ckpt_path=None):
         super().__init__()
-        self.model = torch.hub.load(repo, model_name, pretrained=pretrained)
+        self.model = torch.hub.load(repo, model_name, source="local",weights="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth")
         if ckpt_path is not None:
             state = torch.load(ckpt_path, map_location="cpu")
             if isinstance(state, dict):

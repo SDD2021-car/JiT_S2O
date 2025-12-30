@@ -63,10 +63,10 @@ def get_args_parser():
     parser.add_argument('--mapper_loss_weight', default=1.0, type=float, help='Weight for SAR-optical mapper loss')
     parser.add_argument('--prototype_path', default=None, type=str, help='Path to optical prototype centroids')
     parser.add_argument('--prototype_loss_weight', default=0.1, type=float, help='Weight for prototype projection loss')
-    parser.add_argument('--dino_repo', default='/data/yjy_data/JiT', type=str, help='Torch hub repo for DINOv3')
+    parser.add_argument('--dino_repo', default='./dinov3-main', type=str, help='Torch hub repo for DINOv3')
     parser.add_argument('--dino_model', default='dinov3_vitl16', type=str, help='DINOv3 model name')
     parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
-    parser.add_argument('--dino_ckpt_path', default=None, type=str, help='Local path to DINOv3 checkpoint')
+    parser.add_argument('--dino_ckpt_path', default="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth", type=str, help='Local path to DINOv3 checkpoint')
     parser.set_defaults(dino_pretrained=True)
 
     parser.add_argument('--seed', default=77, type=int)

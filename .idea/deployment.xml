@@ -756,6 +756,9 @@
           <mappings>
             <mapping deploy="/data/yjy_data/JiT" local="$PROJECT_DIR$" />
           </mappings>
+          <excludedPaths>
+            <excludedPath path="/data/yjy_data/JiT/dinov3-main" />
+          </excludedPaths>
         </serverdata>
       </paths>
       <paths name="yjy@10.104.6.25:2200 (7)">
