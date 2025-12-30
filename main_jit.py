@@ -25,7 +25,7 @@ def get_args_parser():
     # architecture
     parser.add_argument('--model', default='JiT-B/16', type=str, metavar='MODEL',
                         help='Name of the model to train')
-    parser.add_argument('--img_size', default=512, type=int, help='Image size')
+    parser.add_argument('--img_size', default=256, type=int, help='Image size')
     parser.add_argument('--attn_dropout', type=float, default=0.0, help='Attention dropout rate')
     parser.add_argument('--proj_dropout', type=float, default=0.0, help='Projection dropout rate')
 
@@ -63,8 +63,8 @@ def get_args_parser():
     parser.add_argument('--mapper_loss_weight', default=1.0, type=float, help='Weight for SAR-optical mapper loss')
     parser.add_argument('--prototype_path', default=None, type=str, help='Path to optical prototype centroids')
     parser.add_argument('--prototype_loss_weight', default=0.1, type=float, help='Weight for prototype projection loss')
-    parser.add_argument('--dino_repo', default='facebookresearch/dinov3', type=str, help='Torch hub repo for DINOv3')
-    parser.add_argument('--dino_model', default='dinov3_vitl14', type=str, help='DINOv3 model name')
+    parser.add_argument('--dino_repo', default='/data/yjy_data/JiT', type=str, help='Torch hub repo for DINOv3')
+    parser.add_argument('--dino_model', default='dinov3_vitl16', type=str, help='DINOv3 model name')
     parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
     parser.set_defaults(dino_pretrained=True)
 
@@ -109,7 +109,7 @@ def get_args_parser():
     parser.add_argument('--class_num', default=1, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/NAS_data/hjf/JiTcolor/checkpoints/SAR2Opt',
+    parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default='',
                         help='Folder that contains checkpoint to resume from')
