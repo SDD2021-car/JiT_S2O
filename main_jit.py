@@ -66,6 +66,7 @@ def get_args_parser():
     parser.add_argument('--dino_repo', default='/data/yjy_data/JiT', type=str, help='Torch hub repo for DINOv3')
     parser.add_argument('--dino_model', default='dinov3_vitl16', type=str, help='DINOv3 model name')
     parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
+    parser.add_argument('--dino_ckpt_path', default=None, type=str, help='Local path to DINOv3 checkpoint')
     parser.set_defaults(dino_pretrained=True)
 
     parser.add_argument('--seed', default=77, type=int)

@@ -23,6 +23,7 @@ class Denoiser(nn.Module):
             dino_repo=args.dino_repo,
             dino_model=args.dino_model,
             dino_pretrained=args.dino_pretrained,
+            dino_ckpt_path=args.dino_ckpt_path,
             prototype_path=args.prototype_path,
         )
         self.img_size = args.img_size
