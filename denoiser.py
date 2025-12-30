@@ -11,11 +11,19 @@ class Denoiser(nn.Module):
         super().__init__()
         self.net = JiT_models[args.model](
             input_size=args.img_size,
-            in_channels=4,
+            in_channels=3,
             out_channels=3,
             num_classes=args.class_num,
             attn_drop=args.attn_dropout,
             proj_drop=args.proj_dropout,
+            mapper_depth=args.mapper_depth,
+            mapper_mlp_ratio=args.mapper_mlp_ratio,
+            mapper_attn_drop=args.mapper_attn_drop,
+            mapper_proj_drop=args.mapper_proj_drop,
+            dino_repo=args.dino_repo,
+            dino_model=args.dino_model,
+            dino_pretrained=args.dino_pretrained,
+            prototype_path=args.prototype_path,
         )
         self.img_size = args.img_size
         self.num_classes = args.class_num
@@ -38,6 +46,9 @@ class Denoiser(nn.Module):
         self.cfg_scale = args.cfg
         self.cfg_interval = (args.interval_min, args.interval_max)
 
+        self.mapper_loss_weight = args.mapper_loss_weight
+        self.proto_loss_weight = args.prototype_loss_weight
+
     def drop_labels(self, labels):
         drop = torch.rand(labels.shape[0], device=labels.device) < self.label_drop_prob
         out = torch.where(drop, torch.full_like(labels, self.num_classes), labels)
@@ -58,13 +69,32 @@ class Denoiser(nn.Module):
         z = t * opt_img + (1 - t) * e
         v = (opt_img - z) / (1 - t).clamp_min(self.t_eps)
 
-        z_cond = torch.cat([z, sar_img], dim=1)
-        x_pred = self.net(z_cond, t.flatten(), labels_dropped)
+        net_out = self.net(
+            z,
+            t.flatten(),
+            labels_dropped,
+            sar_img=sar_img,
+            opt_img=opt_img,
+            return_mapper_loss=self.training
+        )
+        if self.training:
+            x_pred, mapper_losses = net_out
+        else:
+            x_pred = net_out
+            mapper_losses = None
         v_pred = (x_pred - z) / (1 - t).clamp_min(self.t_eps)
 
         # l2 loss
         loss = (v - v_pred) ** 2
         loss = loss.mean(dim=(1, 2, 3)).mean()
+
+        if self.training and mapper_losses is not None:
+            mapper_loss = mapper_losses.get("mapper_loss")
+            proto_loss = mapper_losses.get("proto_loss")
+            if mapper_loss is not None:
+                loss = loss + self.mapper_loss_weight * mapper_loss
+            if proto_loss is not None:
+                loss = loss + self.proto_loss_weight * proto_loss
 
         return loss
 
@@ -96,12 +126,11 @@ class Denoiser(nn.Module):
     @torch.no_grad()
     def _forward_sample(self, z, t, labels, sar_img):
         # conditional
-        z_cond = torch.cat([z, sar_img], dim=1)
-        x_cond = self.net(z_cond, t.flatten(), labels)
+        x_cond = self.net(z, t.flatten(), labels, sar_img=sar_img)
         v_cond = (x_cond - z) / (1.0 - t).clamp_min(self.t_eps)
 
         # unconditional
-        x_uncond = self.net(z_cond, t.flatten(), torch.full_like(labels, self.num_classes))
+        x_uncond = self.net(z, t.flatten(), torch.full_like(labels, self.num_classes), sar_img=sar_img)
         v_uncond = (x_uncond - z) / (1.0 - t).clamp_min(self.t_eps)
 
         # cfg interval

@@ -138,6 +138,43 @@ class Attention(nn.Module):
         return x
 
 
+class CrossAttention(nn.Module):
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_norm=True, attn_drop=0., proj_drop=0.):
+        super().__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+
+        self.q_norm = RMSNorm(head_dim) if qk_norm else nn.Identity()
+        self.k_norm = RMSNorm(head_dim) if qk_norm else nn.Identity()
+
+        self.q_proj = nn.Linear(dim, dim, bias=qkv_bias)
+        self.kv_proj = nn.Linear(dim, dim * 2, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def forward(self, x, context, rope_q=None, rope_k=None):
+        B, N, C = x.shape
+        _, M, _ = context.shape
+        q = self.q_proj(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+        kv = self.kv_proj(context).reshape(B, M, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        k, v = kv[0], kv[1]
+
+        q = self.q_norm(q)
+        k = self.k_norm(k)
+
+        if rope_q is not None:
+            q = rope_q(q)
+        if rope_k is not None:
+            k = rope_k(k)
+
+        x = scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p if self.training else 0.)
+        x = x.transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+
 class SwiGLUFFN(nn.Module):
     def __init__(
         self,
@@ -187,19 +224,73 @@ class JiTBlock(nn.Module):
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
                               attn_drop=attn_drop, proj_drop=proj_drop)
         self.norm2 = RMSNorm(hidden_size, eps=1e-6)
+        self.cross_attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
+                                         attn_drop=attn_drop, proj_drop=proj_drop)
+        self.norm3 = RMSNorm(hidden_size, eps=1e-6)
         mlp_hidden_dim = int(hidden_size * mlp_ratio)
         self.mlp = SwiGLUFFN(hidden_size, mlp_hidden_dim, drop=proj_drop)
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(hidden_size, 6 * hidden_size, bias=True)
+            nn.Linear(hidden_size, 9 * hidden_size, bias=True)
         )
 
     @torch.compile
-    def forward(self, x,  c, feat_rope=None):
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=-1)
+    def forward(self, x, c, cond=None, feat_rope=None, cond_rope=None):
+        shift_msa, scale_msa, gate_msa, shift_cross, scale_cross, gate_cross, shift_mlp, scale_mlp, gate_mlp = (
+            self.adaLN_modulation(c).chunk(9, dim=-1)
+        )
         x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa), rope=feat_rope)
-        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+        if cond is not None:
+            x = x + gate_cross.unsqueeze(1) * self.cross_attn(
+                modulate(self.norm2(x), shift_cross, scale_cross),
+                cond,
+                rope_q=feat_rope,
+                rope_k=cond_rope
+            )
+        x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm3(x), shift_mlp, scale_mlp))
         return x
+
+
+class MapperBlock(nn.Module):
+    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0.0, proj_drop=0.0):
+        super().__init__()
+        self.norm1 = RMSNorm(hidden_size, eps=1e-6)
+        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
+                              attn_drop=attn_drop, proj_drop=proj_drop)
+        self.norm2 = RMSNorm(hidden_size, eps=1e-6)
+        mlp_hidden_dim = int(hidden_size * mlp_ratio)
+        self.mlp = SwiGLUFFN(hidden_size, mlp_hidden_dim, drop=proj_drop)
+
+    def forward(self, x, feat_rope=None):
+        x = x + self.attn(self.norm1(x), rope=feat_rope)
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+
+class FrozenDinoV3(nn.Module):
+    def __init__(self, model_name="dinov3_vitl14", repo="facebookresearch/dinov3", pretrained=True):
+        super().__init__()
+        self.model = torch.hub.load(repo, model_name, pretrained=pretrained)
+        self.model.eval()
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+    def forward(self, x):
+        with torch.no_grad():
+            if hasattr(self.model, "forward_features"):
+                outputs = self.model.forward_features(x)
+            else:
+                outputs = self.model(x)
+        if isinstance(outputs, dict):
+            for key in ("x_norm_patchtokens", "patch_tokens", "x_patchtokens", "x_norm_patch_tokens"):
+                if key in outputs:
+                    tokens = outputs[key]
+                    break
+            else:
+                tokens = outputs.get("last_hidden_state", outputs.get("features", outputs))
+        else:
+            tokens = outputs
+        return tokens
 
 
 class JiT(nn.Module):
@@ -221,7 +312,15 @@ class JiT(nn.Module):
         num_classes=1000,
         bottleneck_dim=128,
         in_context_len=32,
-        in_context_start=8
+        in_context_start=8,
+        mapper_depth=2,
+        mapper_mlp_ratio=2.0,
+        mapper_attn_drop=0.0,
+        mapper_proj_drop=0.0,
+        dino_repo="facebookresearch/dinov3",
+        dino_model="dinov3_vitl14",
+        dino_pretrained=True,
+        prototype_path=None
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -265,6 +364,11 @@ class JiT(nn.Module):
             pt_seq_len=hw_seq_len,
             num_cls_token=self.in_context_len
         )
+        self.cond_rope = VisionRotaryEmbeddingFast(
+            dim=half_head_dim,
+            pt_seq_len=hw_seq_len,
+            num_cls_token=0
+        )
 
         # transformer
         self.blocks = nn.ModuleList([
@@ -276,6 +380,29 @@ class JiT(nn.Module):
 
         # linear predict
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
+
+        # frozen dino encoder + mapper
+        self.dino = FrozenDinoV3(model_name=dino_model, repo=dino_repo, pretrained=dino_pretrained)
+        self.dino_dim = getattr(self.dino.model, "embed_dim", getattr(self.dino.model, "num_features", hidden_size))
+        self.mapper_in = nn.Linear(self.dino_dim, hidden_size, bias=True)
+        self.mapper_blocks = nn.ModuleList([
+            MapperBlock(hidden_size, num_heads, mlp_ratio=mapper_mlp_ratio,
+                        attn_drop=mapper_attn_drop, proj_drop=mapper_proj_drop)
+            for _ in range(mapper_depth)
+        ])
+        self.mapper_out = nn.Linear(hidden_size, self.dino_dim, bias=True)
+        self.cond_proj = nn.Linear(self.dino_dim, hidden_size, bias=True)
+
+        self.register_buffer("dino_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("dino_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
+        if prototype_path is not None:
+            prototypes = torch.load(prototype_path, map_location="cpu")
+            if isinstance(prototypes, dict):
+                prototypes = prototypes.get("prototypes", prototypes.get("centroids", prototypes))
+            self.register_buffer("opt_prototypes", prototypes)
+        else:
+            self.opt_prototypes = None
 
         self.initialize_weights()
 
@@ -317,6 +444,18 @@ class JiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
+        nn.init.xavier_uniform_(self.mapper_in.weight)
+        nn.init.constant_(self.mapper_in.bias, 0)
+        nn.init.xavier_uniform_(self.mapper_out.weight)
+        nn.init.constant_(self.mapper_out.bias, 0)
+        nn.init.xavier_uniform_(self.cond_proj.weight)
+        nn.init.constant_(self.cond_proj.bias, 0)
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.dino.eval()
+        return self
+
     def unpatchify(self, x, p):
         """
         x: (N, T, patch_size**2 * C)
@@ -331,7 +470,64 @@ class JiT(nn.Module):
         imgs = x.reshape(shape=(x.shape[0], c, h * p, h * p))
         return imgs
 
-    def forward(self, x, t, y):
+    def _prepare_dino_inputs(self, img):
+        if img.shape[1] == 1:
+            img = img.repeat(1, 3, 1, 1)
+        elif img.shape[1] != 3:
+            raise ValueError(f"DINO expects 3 channels, got {img.shape[1]}")
+        img = (img + 1.0) * 0.5
+        return (img - self.dino_mean) / self.dino_std
+
+    def _resize_tokens(self, tokens, target_hw):
+        bsz, num_tokens, dim = tokens.shape
+        src_hw = int(num_tokens ** 0.5)
+        if src_hw * src_hw != num_tokens:
+            raise ValueError(f"Tokens count {num_tokens} is not a square.")
+        if src_hw == target_hw:
+            return tokens
+        tokens_2d = tokens.view(bsz, src_hw, src_hw, dim).permute(0, 3, 1, 2)
+        tokens_2d = F.interpolate(tokens_2d, size=(target_hw, target_hw), mode="bicubic", align_corners=False)
+        tokens = tokens_2d.permute(0, 2, 3, 1).reshape(bsz, target_hw * target_hw, dim)
+        return tokens
+
+    def _encode_condition(self, sar_img, opt_img=None, return_mapper_loss=False):
+        sar_input = self._prepare_dino_inputs(sar_img)
+        sar_tokens = self.dino(sar_input)
+        if sar_tokens.dim() == 3 and sar_tokens.shape[1] > 1 and int((sar_tokens.shape[1] - 1) ** 0.5) ** 2 == (
+            sar_tokens.shape[1] - 1
+        ):
+            sar_tokens = sar_tokens[:, 1:, :]
+
+        target_hw = self.input_size // self.patch_size
+        sar_tokens = self._resize_tokens(sar_tokens, target_hw)
+
+        mapped = self.mapper_in(sar_tokens)
+        for block in self.mapper_blocks:
+            mapped = block(mapped, feat_rope=self.cond_rope)
+        mapped = self.mapper_out(mapped)
+
+        cond_tokens = self.cond_proj(mapped)
+
+        mapper_loss = None
+        proto_loss = None
+        if return_mapper_loss and opt_img is not None:
+            opt_input = self._prepare_dino_inputs(opt_img)
+            opt_tokens = self.dino(opt_input)
+            if opt_tokens.dim() == 3 and opt_tokens.shape[1] > 1 and int((opt_tokens.shape[1] - 1) ** 0.5) ** 2 == (
+                opt_tokens.shape[1] - 1
+            ):
+                opt_tokens = opt_tokens[:, 1:, :]
+            opt_tokens = self._resize_tokens(opt_tokens, target_hw)
+            mapper_loss = F.mse_loss(mapped, opt_tokens)
+
+            if self.opt_prototypes is not None:
+                mapped_norm = F.normalize(mapped, dim=-1)
+                prototypes = F.normalize(self.opt_prototypes, dim=-1)
+                sims = torch.einsum("bnd,kd->bnk", mapped_norm, prototypes)
+                proto_loss = 1.0 - sims.max(dim=-1).values.mean()
+        return cond_tokens, mapper_loss, proto_loss
+
+    def forward(self, x, t, y, sar_img=None, opt_img=None, return_mapper_loss=False):
         """
         x: (N, C, H, W)
         t: (N,)
@@ -341,6 +537,16 @@ class JiT(nn.Module):
         t_emb = self.t_embedder(t)
         y_emb = self.y_embedder(y)
         c = t_emb + y_emb
+
+        cond_tokens = None
+        mapper_loss = None
+        proto_loss = None
+        if sar_img is not None:
+            cond_tokens, mapper_loss, proto_loss = self._encode_condition(
+                sar_img,
+                opt_img=opt_img,
+                return_mapper_loss=return_mapper_loss
+            )
 
         # forward JiT
         x = self.x_embedder(x)
@@ -352,13 +558,21 @@ class JiT(nn.Module):
                 in_context_tokens = y_emb.unsqueeze(1).repeat(1, self.in_context_len, 1)
                 in_context_tokens += self.in_context_posemb
                 x = torch.cat([in_context_tokens, x], dim=1)
-            x = block(x, c, self.feat_rope if i < self.in_context_start else self.feat_rope_incontext)
+            x = block(
+                x,
+                c,
+                cond=cond_tokens,
+                feat_rope=self.feat_rope if i < self.in_context_start else self.feat_rope_incontext,
+                cond_rope=self.cond_rope
+            )
 
         x = x[:, self.in_context_len:]
 
         x = self.final_layer(x, c)
         output = self.unpatchify(x, self.patch_size)
 
+        if return_mapper_loss:
+            return output, {"mapper_loss": mapper_loss, "proto_loss": proto_loss}
         return output
 
 

@@ -55,6 +55,19 @@ def get_args_parser():
     parser.add_argument('--t_eps', default=5e-2, type=float)
     parser.add_argument('--label_drop_prob', default=0.1, type=float)
 
+    # SAR conditioning
+    parser.add_argument('--mapper_depth', default=2, type=int, help='Number of transformer blocks in SAR mapper')
+    parser.add_argument('--mapper_mlp_ratio', default=2.0, type=float, help='MLP ratio in SAR mapper')
+    parser.add_argument('--mapper_attn_drop', default=0.0, type=float, help='Attention dropout in SAR mapper')
+    parser.add_argument('--mapper_proj_drop', default=0.0, type=float, help='Projection dropout in SAR mapper')
+    parser.add_argument('--mapper_loss_weight', default=1.0, type=float, help='Weight for SAR-optical mapper loss')
+    parser.add_argument('--prototype_path', default=None, type=str, help='Path to optical prototype centroids')
+    parser.add_argument('--prototype_loss_weight', default=0.1, type=float, help='Weight for prototype projection loss')
+    parser.add_argument('--dino_repo', default='facebookresearch/dinov3', type=str, help='Torch hub repo for DINOv3')
+    parser.add_argument('--dino_model', default='dinov3_vitl14', type=str, help='DINOv3 model name')
+    parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
+    parser.set_defaults(dino_pretrained=True)
+
     parser.add_argument('--seed', default=77, type=int)
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='Starting epoch')
