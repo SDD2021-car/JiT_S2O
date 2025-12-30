@@ -268,6 +268,7 @@ class MapperBlock(nn.Module):
 
 
 class FrozenDinoV3(nn.Module):
+<<<<<<< ours
     def __init__(self, model_name="dinov3_vitl16", repo="facebook/dinov3-vitl16-pretrain-sat493m", pretrained=True):
         super().__init__()
         self.model = torch.hub.load(
@@ -277,6 +278,11 @@ class FrozenDinoV3(nn.Module):
             path="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth"
         )
 
+=======
+    def __init__(self, model_name="dinov3_vitl14", repo="facebookresearch/dinov3", pretrained=True):
+        super().__init__()
+        self.model = torch.hub.load(repo, model_name, pretrained=pretrained)
+>>>>>>> theirs
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
