@@ -268,14 +268,16 @@ class MapperBlock(nn.Module):
 
 
 class FrozenDinoV3(nn.Module):
-    def __init__(self, model_name="dinov3_vitl16", repo="facebook/dinov3-vitl16-pretrain-sat493m", pretrained=True):
+    def __init__(self, model_name="dinov3_vitl14", repo="facebookresearch/dinov3", pretrained=True, ckpt_path=None):
         super().__init__()
-        self.model = torch.hub.load(
-            repo,
-            model_name,
-            source='local',
-            path="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth"
-        )
+        self.model = torch.hub.load(repo, model_name, pretrained=pretrained)
+        if ckpt_path is not None:
+            state = torch.load(ckpt_path, map_location="cpu")
+            if isinstance(state, dict):
+                state = state.get("state_dict", state.get("model", state))
+            missing, unexpected = self.model.load_state_dict(state, strict=False)
+            if missing or unexpected:
+                print(f"[FrozenDinoV3] Missing keys: {len(missing)}, unexpected keys: {len(unexpected)}")
 
         self.model.eval()
         for param in self.model.parameters():
