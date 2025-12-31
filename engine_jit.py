@@ -175,17 +175,19 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
                 break
             # gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
             # gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
-            gen_img = np.round(
-                np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255)
+            gen_img = sampled_images[b_id]
+            if torch.is_tensor(gen_img):
+                gen_img = gen_img.detach().cpu().float().numpy()
+            gen_img = np.round(np.clip(gen_img.transpose([1, 2, 0]) * 255, 0, 255)).astype(np.uint8)
+            gen_img = np.ascontiguousarray(gen_img[:, :, ::-1])
+            print(
+                "gen_img info:",
+                "type=", type(gen_img),
+                "dtype=", gen_img.dtype,
+                "shape=", gen_img.shape,
+                "contiguous=", gen_img.flags.get("C_CONTIGUOUS", False),
             )
-            gen_img = gen_img.astype(np.uint8, copy=False)[:, :, ::-1].copy()
-            out_path = os.path.join(save_folder, sar_names[b_id])
-            gen_img_cv2 = to_cv2_uint8(gen_img)
-            print("[imwrite]:", out_path, gen_img_cv2.shape, gen_img_cv2.dtype)
-            ok = cv2.imwrite(out_path, gen_img_cv2)
-            if not ok:
-                print("[imwrite] failed:", out_path, gen_img_cv2.shape, gen_img_cv2.dtype)
-
+            cv2.imwrite(os.path.join(save_folder, sar_names[b_id]), gen_img)
         img_count += sampled_images.size(0)
 
     torch.distributed.barrier()
