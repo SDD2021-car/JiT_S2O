@@ -425,8 +425,8 @@ class JiT(nn.Module):
 
         # Initialize (and freeze) pos_embed by sin-cos embedding:
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], int(self.x_embedder.num_patches ** 0.5))
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
-
+        # self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        self.pos_embed.data.copy_(torch.as_tensor(pos_embed).float().unsqueeze(0))
         # Initialize patch_embed like nn.Linear (instead of nn.Conv2d):
         w1 = self.x_embedder.proj1.weight.data
         nn.init.xavier_uniform_(w1.view([w1.shape[0], -1]))

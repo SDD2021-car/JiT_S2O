@@ -3,9 +3,6 @@ import sys
 import os
 import shutil
 
-import torch
-import numpy as np
-import cv2
 import torchvision.transforms as transforms
 
 import util.misc as misc
@@ -14,6 +11,43 @@ import torch_fidelity
 import copy
 
 from util.datasets import ImageDirDataset
+import numpy as np
+import torch
+import cv2
+
+def to_cv2_uint8(img):
+    # torch -> numpy
+    if isinstance(img, torch.Tensor):
+        img = img.detach()
+        if img.is_cuda:
+            img = img.cpu()
+        img = img.float().numpy()
+
+    img = np.asarray(img)
+
+    # 去掉 batch 维
+    if img.ndim == 4 and img.shape[0] == 1:
+        img = img[0]
+
+    # CHW -> HWC
+    if img.ndim == 3 and img.shape[0] in (1, 3) and img.shape[-1] not in (1, 3):
+        img = np.transpose(img, (1, 2, 0))
+
+    # 如果是单通道，保证形状是 (H,W)
+    if img.ndim == 3 and img.shape[2] == 1:
+        img = img[:, :, 0]
+
+    # 把范围压到 0..255 并转 uint8
+    if img.dtype != np.uint8:
+        # 常见：模型输出在 [-1,1] 或 [0,1]
+        if img.min() >= -1.0 and img.max() <= 1.0:
+            img = (img + 1.0) / 2.0  # [-1,1] -> [0,1]
+        img = np.clip(img, 0.0, 1.0) if img.max() <= 1.0 else np.clip(img, 0.0, 255.0)
+        if img.max() <= 1.0:
+            img = (img * 255.0)
+        img = img.astype(np.uint8)
+
+    return img
 
 
 def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, epoch, log_writer=None, args=None):
@@ -132,16 +166,26 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
 
         # denormalize images
         sampled_images = (sampled_images + 1) / 2
-        sampled_images = sampled_images.detach().cpu()
-
+        # sampled_images = sampled_images.detach().cpu()
+        sampled_images = sampled_images.detach().cpu().float()
         # distributed save images
         for b_id in range(sampled_images.size(0)):
             img_id = img_count + b_id
             if img_id >= num_images:
                 break
-            gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
-            gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
-            cv2.imwrite(os.path.join(save_folder, sar_names[b_id]), gen_img)
+            # gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
+            # gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
+            gen_img = np.round(
+                np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255)
+            )
+            gen_img = gen_img.astype(np.uint8, copy=False)[:, :, ::-1].copy()
+            out_path = os.path.join(save_folder, sar_names[b_id])
+            gen_img_cv2 = to_cv2_uint8(gen_img)
+            print("[imwrite]:", out_path, gen_img_cv2.shape, gen_img_cv2.dtype)
+            ok = cv2.imwrite(out_path, gen_img_cv2)
+            if not ok:
+                print("[imwrite] failed:", out_path, gen_img_cv2.shape, gen_img_cv2.dtype)
+
         img_count += sampled_images.size(0)
 
     torch.distributed.barrier()

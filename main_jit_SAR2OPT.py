@@ -25,7 +25,7 @@ def get_args_parser():
     # architecture
     parser.add_argument('--model', default='JiT-B/16', type=str, metavar='MODEL',
                         help='Name of the model to train')
-    parser.add_argument('--img_size', default=256, type=int, help='Image size')
+    parser.add_argument('--img_size', default=512, type=int, help='Image size')
     parser.add_argument('--attn_dropout', type=float, default=0.0, help='Attention dropout rate')
     parser.add_argument('--proj_dropout', type=float, default=0.0, help='Projection dropout rate')
 
@@ -33,7 +33,7 @@ def get_args_parser():
     parser.add_argument('--epochs', default=650, type=int)
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='Epochs to warm up LR')
-    parser.add_argument('--batch_size', default=8, type=int,
+    parser.add_argument('--batch_size', default=4, type=int,
                         help='Batch size per GPU (effective batch size = batch_size * # GPUs)')
     parser.add_argument('--lr', type=float, default=None, metavar='LR',
                         help='Learning rate (absolute)')
@@ -110,9 +110,9 @@ def get_args_parser():
     parser.add_argument('--class_num', default=1, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints',
+    parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints_SAR2OPT',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default='/NAS_data/yjy/JiT_S2O/checkpoints',
+    parser.add_argument('--resume', default='',
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
@@ -205,6 +205,7 @@ def main(args):
     print("Effective batch size: %d" % eff_batch_size)
 
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[6,7])
     model_without_ddp = model.module
 
     # Set up optimizer with weight decay adjustment for bias and norm layers
@@ -215,7 +216,7 @@ def main(args):
     # Resume from checkpoint if provided
     checkpoint_path = os.path.join(args.resume, "checkpoint-last.pth") if args.resume else None
     if checkpoint_path and os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path, map_location='cpu',weights_only=False)
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
         model_without_ddp.load_state_dict(checkpoint['model'])
 
         ema_state_dict1 = checkpoint['model_ema1']
