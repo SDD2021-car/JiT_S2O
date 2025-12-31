@@ -176,19 +176,37 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
             # gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
             # gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
             gen_img = sampled_images[b_id]
+
             if torch.is_tensor(gen_img):
                 gen_img = gen_img.detach().cpu().float().numpy()
-            gen_img = np.round(np.clip(gen_img.transpose([1, 2, 0]) * 255, 0, 255)).astype(np.uint8)
-            gen_img = np.ascontiguousarray(gen_img[:, :, ::-1])
-            print(
-                "gen_img info:",
-                "type=", type(gen_img),
-                "dtype=", gen_img.dtype,
-                "shape=", gen_img.shape,
-                "contiguous=", gen_img.flags["C_CONTIGUOUS"],
-            )
-            cv2.imwrite(os.path.join(save_folder, sar_names[b_id]), gen_img)
-        img_count += sampled_images.size(0)
+
+            # CHW -> HWC
+            gen_img = gen_img.transpose(1, 2, 0)
+
+            # 归一化 & uint8
+            gen_img = np.clip(gen_img, 0, 1)
+            gen_img = (gen_img * 255).round().astype(np.uint8)
+
+            # 处理通道数
+            if gen_img.ndim == 3 and gen_img.shape[2] == 1:
+                gen_img = gen_img[:, :, 0]  # 灰度
+            elif gen_img.ndim == 3 and gen_img.shape[2] == 3:
+                gen_img = gen_img[:, :, ::-1]  # RGB -> BGR
+
+            gen_img = np.ascontiguousarray(gen_img)
+            print(gen_img.dtype)
+            # 路径 & 后缀
+            name = str(sar_names[b_id])
+            if not name.lower().endswith((".png", ".jpg", ".jpeg")):
+                name += ".png"
+
+            out_path = os.path.join(save_folder, name)
+
+            assert isinstance(gen_img, np.ndarray)
+            assert gen_img.dtype == np.uint8
+            assert gen_img.ndim in (2, 3)
+
+            cv2.imwrite(out_path, gen_img)
 
     torch.distributed.barrier()
 
