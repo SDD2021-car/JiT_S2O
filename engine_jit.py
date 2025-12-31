@@ -185,7 +185,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
                 "type=", type(gen_img),
                 "dtype=", gen_img.dtype,
                 "shape=", gen_img.shape,
-                "contiguous=", gen_img.flags.get("C_CONTIGUOUS", False),
+                "contiguous=", gen_img.flags["C_CONTIGUOUS"],
             )
             cv2.imwrite(os.path.join(save_folder, sar_names[b_id]), gen_img)
         img_count += sampled_images.size(0)
