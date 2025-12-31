@@ -13,7 +13,7 @@ import copy
 from util.datasets import ImageDirDataset
 import numpy as _np
 import torch
-import cv2
+from PIL import Image
 
 
 def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, epoch, log_writer=None, args=None):
@@ -115,6 +115,37 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     model_without_ddp.load_state_dict(ema_state_dict)
 
     img_count = 0
+    def _to_uint8_image(img):
+        if torch.is_tensor(img):
+            img = img.detach().cpu().float().numpy()
+        elif not isinstance(img, _np.ndarray):
+            img = _np.asarray(img)
+
+        if img.dtype == _np.object_:
+            img = img.astype(_np.float32)
+
+        if img.ndim == 3 and img.shape[0] in (1, 3) and img.shape[0] != img.shape[2]:
+            img = img.transpose(1, 2, 0)
+
+        img = _np.clip(img, 0, 1)
+        img = (img * 255).round().astype(_np.uint8)
+
+        if img.ndim == 3 and img.shape[2] == 1:
+            img = img[:, :, 0]
+
+        if img.ndim not in (2, 3):
+            raise ValueError(f"Unexpected image shape: {img.shape}")
+
+        return img
+
+    def _save_image(img, path):
+        if img.ndim == 2:
+            Image.fromarray(img, mode="L").save(path)
+        elif img.shape[2] == 3:
+            Image.fromarray(img, mode="RGB").save(path)
+        else:
+            raise ValueError(f"Unsupported image shape for saving: {img.shape}")
+
     for i, (sar_img, sar_names) in enumerate(data_loader):
         if img_count >= num_images:
             break
@@ -139,31 +170,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
             img_id = img_count + b_id
             if img_id >= num_images:
                 break
-            # gen_img = np.round(np.clip(sampled_images[b_id].numpy().transpose([1, 2, 0]) * 255, 0, 255))
-            # gen_img = gen_img.astype(np.uint8)[:, :, ::-1]
-            gen_img = sampled_images[b_id]
-
-            if torch.is_tensor(gen_img):
-                gen_img = gen_img.detach().cpu().float().numpy()
-            elif not isinstance(gen_img, _np.ndarray):
-                gen_img = _np.asarray(gen_img)
-
-            if gen_img.dtype == _np.object_:
-                gen_img = gen_img.astype(_np.float32)
-            # CHW -> HWC
-            gen_img = gen_img.transpose(1, 2, 0)
-
-            # 归一化 & uint8
-            gen_img = _np.clip(gen_img, 0, 1)
-            gen_img = (gen_img * 255).round().astype(_np.uint8)
-
-            # 处理通道数
-            if gen_img.ndim == 3 and gen_img.shape[2] == 1:
-                gen_img = gen_img[:, :, 0]  # 灰度
-            elif gen_img.ndim == 3 and gen_img.shape[2] == 3:
-                gen_img = gen_img[:, :, ::-1]  # RGB -> BGR
-            print(type(gen_img))
-            # gen_img = np.ascontiguousarray(gen_img)
+            gen_img = _to_uint8_image(sampled_images[b_id])
 
             # 路径 & 后缀
             name = str(sar_names[b_id])
@@ -172,11 +179,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
 
             out_path = os.path.join(save_folder, name)
 
-            assert isinstance(gen_img[0], _np.ndarray)
-            assert gen_img.dtype == _np.uint8
-            assert gen_img.ndim in (2, 3)
-
-            cv2.imwrite(out_path, gen_img)
+            _save_image(gen_img, out_path)
 
     torch.distributed.barrier()
 
