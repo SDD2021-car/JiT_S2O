@@ -58,6 +58,9 @@ class PairedImageDirDataset(Dataset):
         sar_img = Image.open(sar_path).convert("L")
         opt_img = Image.open(opt_path).convert("RGB")
         if self.transform is not None:
-            sar_img = self.transform(sar_img)
-            opt_img = self.transform(opt_img)
+            try:
+                sar_img, opt_img = self.transform(sar_img, opt_img)
+            except TypeError:
+                sar_img = self.transform(sar_img)
+                opt_img = self.transform(opt_img)
         return sar_img, opt_img

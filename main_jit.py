@@ -11,13 +11,28 @@ import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
 import util.misc as misc
-
+from torchvision.transforms import functional as F
 import copy
 from engine_jit import train_one_epoch, evaluate
 
 from denoiser import Denoiser
 from util.datasets import PairedImageDirDataset
 
+class PairedTrainTransform:
+    def __init__(self, img_size, flip_prob=0.5):
+        self.img_size = img_size
+        self.flip_prob = flip_prob
+        self.to_tensor = transforms.PILToTensor()
+
+    def __call__(self, sar_img, opt_img):
+        sar_img = F.resize(sar_img, [self.img_size, self.img_size])
+        opt_img = F.resize(opt_img, [self.img_size, self.img_size])
+        if torch.rand(1).item() < self.flip_prob:
+            sar_img = F.hflip(sar_img)
+            opt_img = F.hflip(opt_img)
+        sar_img = self.to_tensor(sar_img)
+        opt_img = self.to_tensor(opt_img)
+        return sar_img, opt_img
 
 def get_args_parser():
     parser = argparse.ArgumentParser('JiT', add_help=False)
@@ -25,7 +40,7 @@ def get_args_parser():
     # architecture
     parser.add_argument('--model', default='JiT-B/16', type=str, metavar='MODEL',
                         help='Name of the model to train')
-    parser.add_argument('--img_size', default=256, type=int, help='Image size')
+    parser.add_argument('--img_size', default=512, type=int, help='Image size')
     parser.add_argument('--attn_dropout', type=float, default=0.0, help='Attention dropout rate')
     parser.add_argument('--proj_dropout', type=float, default=0.0, help='Projection dropout rate')
 
@@ -112,7 +127,7 @@ def get_args_parser():
     # checkpointing
     parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default='/NAS_data/yjy/JiT_S2O/checkpoints',
+    parser.add_argument('--resume', default=None,
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
@@ -158,11 +173,7 @@ def main(args):
         log_writer = None
 
     # Data augmentation transforms
-    transform_train = transforms.Compose([
-        transforms.Resize((args.img_size, args.img_size)),
-        transforms.RandomHorizontalFlip(),
-        transforms.PILToTensor()
-    ])
+    transform_train = PairedTrainTransform(args.img_size)
 
     dataset_train = PairedImageDirDataset(
         args.sar_train_path,
