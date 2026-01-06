@@ -83,6 +83,10 @@ def get_args_parser():
     parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
     parser.add_argument('--dino_ckpt_path', default="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth", type=str, help='Local path to DINOv3 checkpoint')
     parser.set_defaults(dino_pretrained=True)
+    parser.add_argument('--sar_concat_mode', default='raw+dino', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
+                        help='Concatenate SAR input (raw/DINO/both) along channel dimension')
+    parser.add_argument('--sar_concat_channels', default=1, type=int,
+                        help='Number of channels to concatenate when sar_concat_mode is enabled')
 
     parser.add_argument('--seed', default=77, type=int)
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',

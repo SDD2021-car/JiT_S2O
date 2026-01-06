@@ -328,9 +328,16 @@ class JiT(nn.Module):
         dino_repo="facebookresearch/dinov3",
         dino_model="dinov3_vitl14",
         dino_pretrained=True,
-        prototype_path=None
+        dino_ckpt_path=None,
+        prototype_path=None,
+        sar_concat_mode="none",
+        sar_concat_channels=1
     ):
         super().__init__()
+        self.sar_concat_mode = sar_concat_mode
+        self.sar_concat_channels = sar_concat_channels
+        if self.sar_concat_mode != "none":
+            in_channels = in_channels + self._get_sar_concat_channel_count()
         self.in_channels = in_channels
         if out_channels is None:
             out_channels = in_channels
@@ -390,7 +397,12 @@ class JiT(nn.Module):
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
 
         # frozen dino encoder + mapper
-        self.dino = FrozenDinoV3(model_name=dino_model, repo=dino_repo, pretrained=dino_pretrained)
+        self.dino = FrozenDinoV3(
+            model_name=dino_model,
+            repo=dino_repo,
+            pretrained=dino_pretrained,
+            ckpt_path=dino_ckpt_path
+        )
         self.dino_dim = getattr(self.dino.model, "embed_dim", getattr(self.dino.model, "num_features", hidden_size))
         self.mapper_in = nn.Linear(self.dino_dim, hidden_size, bias=True)
         self.mapper_blocks = nn.ModuleList([
@@ -400,6 +412,8 @@ class JiT(nn.Module):
         ])
         self.mapper_out = nn.Linear(hidden_size, self.dino_dim, bias=True)
         self.cond_proj = nn.Linear(self.dino_dim, hidden_size, bias=True)
+        if self.sar_concat_mode in ("dino", "raw+dino"):
+            self.sar_feat_proj = nn.Conv2d(self.dino_dim, self.sar_concat_channels, kernel_size=1, bias=True)
 
         self.register_buffer("dino_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer("dino_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
@@ -413,6 +427,52 @@ class JiT(nn.Module):
             self.opt_prototypes = None
 
         self.initialize_weights()
+
+    def _build_sar_concat(self, sar_img):
+        if sar_img is None:
+            raise ValueError("sar_img must be provided when sar_concat_mode is enabled.")
+        if sar_img.shape[-1] != self.input_size or sar_img.shape[-2] != self.input_size:
+            sar_img = F.interpolate(sar_img, size=(self.input_size, self.input_size), mode="bilinear", align_corners=False)
+        if self.sar_concat_mode == "raw+dino":
+            sar_raw = self._build_sar_raw_concat(sar_img)
+            sar_dino = self._build_sar_dino_concat(sar_img)
+            return torch.cat([sar_raw, sar_dino], dim=1)
+        if self.sar_concat_mode == "raw":
+            return self._build_sar_raw_concat(sar_img)
+        if self.sar_concat_mode == "dino":
+            return self._build_sar_dino_concat(sar_img)
+        raise ValueError(f"Unsupported sar_concat_mode: {self.sar_concat_mode}")
+
+    def _get_sar_concat_channel_count(self):
+        if self.sar_concat_mode == "raw+dino":
+            return self.sar_concat_channels * 2
+        return self.sar_concat_channels
+
+    def _build_sar_raw_concat(self, sar_img):
+        if sar_img.shape[1] == self.sar_concat_channels:
+            return sar_img
+        if sar_img.shape[1] == 1 and self.sar_concat_channels == 3:
+            return sar_img.repeat(1, 3, 1, 1)
+        raise ValueError(
+            f"sar_img channels ({sar_img.shape[1]}) do not match sar_concat_channels ({self.sar_concat_channels})."
+        )
+
+    def _build_sar_dino_concat(self, sar_img):
+        sar_input = self._prepare_dino_inputs(sar_img)
+        sar_tokens = self.dino(sar_input)
+        if sar_tokens.dim() == 3 and sar_tokens.shape[1] > 1 and int((sar_tokens.shape[1] - 1) ** 0.5) ** 2 == (
+            sar_tokens.shape[1] - 1
+        ):
+            sar_tokens = sar_tokens[:, 1:, :]
+        target_hw = self.input_size // self.patch_size
+        sar_tokens = self._resize_tokens(sar_tokens, target_hw)
+        sar_feats = sar_tokens.view(sar_tokens.size(0), target_hw, target_hw, -1).permute(0, 3, 1, 2)
+        sar_feats = self.sar_feat_proj(sar_feats)
+        if sar_feats.shape[-1] != self.input_size:
+            sar_feats = F.interpolate(
+                sar_feats, size=(self.input_size, self.input_size), mode="bilinear", align_corners=False
+            )
+        return sar_feats
 
     def initialize_weights(self):
         # Initialize transformer layers:
@@ -541,6 +601,9 @@ class JiT(nn.Module):
         t: (N,)
         y: (N,)
         """
+        if self.sar_concat_mode != "none":
+            sar_concat = self._build_sar_concat(sar_img)
+            x = torch.cat([x, sar_concat], dim=1)
         # class and time embeddings
         t_emb = self.t_embedder(t)
         y_emb = self.y_embedder(y)

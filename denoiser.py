@@ -9,6 +9,8 @@ class Denoiser(nn.Module):
         args
     ):
         super().__init__()
+        sar_concat_mode = getattr(args, "sar_concat_mode", "none")
+        sar_concat_channels = getattr(args, "sar_concat_channels", 1)
         self.net = JiT_models[args.model](
             input_size=args.img_size,
             in_channels=3,
@@ -25,6 +27,8 @@ class Denoiser(nn.Module):
             dino_pretrained=args.dino_pretrained,
             dino_ckpt_path=args.dino_ckpt_path,
             prototype_path=args.prototype_path,
+            sar_concat_mode=sar_concat_mode,
+            sar_concat_channels=sar_concat_channels,
         )
         self.img_size = args.img_size
         self.num_classes = args.class_num
