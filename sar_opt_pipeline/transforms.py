@@ -47,53 +47,66 @@ def normalize_opt(
     raise ValueError(f"Unknown opt normalization mode: {mode}")
 
 
+def _ensure_sar_single_channel(sar: torch.Tensor) -> tuple[torch.Tensor, bool]:
+    """Return SAR tensor as (B, 1, H, W) and whether to squeeze batch dim."""
+    if sar.dim() == 3:
+        sar = sar.unsqueeze(0)
+        squeeze_batch = True
+    elif sar.dim() == 4:
+        squeeze_batch = False
+    else:
+        raise ValueError("Expected SAR tensor shape (C, H, W) or (B, C, H, W)")
+
+    if sar.shape[1] == 3:
+        sar = sar.mean(dim=1, keepdim=True)
+    elif sar.shape[1] != 1:
+        raise ValueError("Expected SAR tensor shape with 1 or 3 channels")
+    return sar, squeeze_batch
+
+
 def _conv2d_single_channel(tensor: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
-    if tensor.dim() != 3:
-        raise ValueError("Expected SAR tensor shape (C, H, W)")
-    if tensor.shape[0] == 3:
-        tensor = tensor.mean(dim=0, keepdim=True)
-    elif tensor.shape[0] != 1:
-        raise ValueError("Expected SAR tensor shape (1, H, W) or (3, H, W)")
-    kernel = kernel.to(dtype=tensor.dtype, device=tensor.device)
+    sar, squeeze_batch = _ensure_sar_single_channel(tensor)
+    kernel = kernel.to(dtype=sar.dtype, device=sar.device)
     kernel = kernel[None, None, :, :]
-    tensor = tensor[None, :, :, :]
-    return F.conv2d(tensor, kernel, padding=kernel.shape[-1] // 2)[0]
+    out = F.conv2d(sar, kernel, padding=kernel.shape[-1] // 2)
+    return out[0] if squeeze_batch else out
 
 
 def _local_stats(tensor: torch.Tensor, window: int, eps: float) -> tuple[torch.Tensor, torch.Tensor]:
-    kernel = torch.ones((window, window), device=tensor.device, dtype=tensor.dtype)
+    sar, squeeze_batch = _ensure_sar_single_channel(tensor)
+    kernel = torch.ones((window, window), device=sar.device, dtype=sar.dtype)
     kernel = kernel / kernel.numel()
     kernel = kernel[None, None, :, :]
-    tensor_batched = tensor[None, :, :, :]
-    mean = F.conv2d(tensor_batched, kernel, padding=window // 2)[0]
-    mean_sq = F.conv2d(tensor_batched**2, kernel, padding=window // 2)[0]
+    mean = F.conv2d(sar, kernel, padding=window // 2)
+    mean_sq = F.conv2d(sar**2, kernel, padding=window // 2)
     var = torch.clamp(mean_sq - mean**2, min=0.0)
     std = torch.sqrt(var + eps)
+    if squeeze_batch:
+        return mean[0], std[0]
     return mean, std
 
 
 def compute_sar_multiscale_channels(
     sar: torch.Tensor, config: SARMultiscaleConfig
 ) -> dict[str, torch.Tensor]:
-    """Compute multi-scale structure channels for SAR as a named dict."""
+    """Compute multi-scale structure channels for SAR as a named dict.
+
+    Supports SAR tensors shaped (C, H, W) or (B, C, H, W).
+    """
     channels: dict[str, torch.Tensor] = {}
-    if sar.dim() != 3:
-        raise ValueError("Expected SAR tensor shape (C, H, W)")
-    sar_single = sar
-    if sar_single.shape[0] == 3:
-        sar_single = sar_single.mean(dim=0, keepdim=True)
-    elif sar_single.shape[0] != 1:
-        raise ValueError("Expected SAR tensor shape (1, H, W) or (3, H, W)")
+    sar_single, squeeze_batch = _ensure_sar_single_channel(sar)
+    if squeeze_batch:
+        sar_single = sar_single[0]
 
     sobel_x_kernel = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=sar.dtype)
     sobel_y_kernel = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=sar.dtype)
     laplacian_kernel = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=sar.dtype)
 
     if config.sobel:
-        channels["sobel_x"] = _conv2d_single_channel(sar, sobel_x_kernel)
-        channels["sobel_y"] = _conv2d_single_channel(sar, sobel_y_kernel)
+        channels["sobel_x"] = _conv2d_single_channel(sar_single, sobel_x_kernel)
+        channels["sobel_y"] = _conv2d_single_channel(sar_single, sobel_y_kernel)
     if config.laplacian:
-        channels["laplacian"] = _conv2d_single_channel(sar, laplacian_kernel)
+        channels["laplacian"] = _conv2d_single_channel(sar_single, laplacian_kernel)
 
     if config.local_variance or config.local_contrast:
         mean, std = _local_stats(sar_single, window=config.local_window, eps=config.eps)
@@ -113,4 +126,8 @@ def compute_sar_multiscale(sar: torch.Tensor, config: SARMultiscaleConfig) -> to
     Outputs 3-6 channels: sobel_x/y, laplacian, local variance, local contrast.
     """
     channels = compute_sar_multiscale_channels(sar, config)
-    return torch.cat(list(channels.values()), dim=0)
+    channel_tensors = list(channels.values())
+    if not channel_tensors:
+        raise ValueError("At least one SAR multiscale channel must be enabled.")
+    dim = 0 if channel_tensors[0].dim() == 3 else 1
+    return torch.cat(channel_tensors, dim=dim)
