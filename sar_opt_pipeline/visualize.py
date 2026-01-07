@@ -6,6 +6,9 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import matplotlib
+matplotlib.use("Agg")
 
 
 def _to_numpy_image(tensor: torch.Tensor) -> np.ndarray:
@@ -13,6 +16,20 @@ def _to_numpy_image(tensor: torch.Tensor) -> np.ndarray:
     if tensor.dim() == 3:
         tensor = tensor.permute(1, 2, 0)
     return tensor.numpy()
+
+
+def _progress_iter(total: int, desc: str) -> Iterable[int]:
+    if total <= 0:
+        return []
+    for i in range(total):
+        done = i + 1
+        percent = done / total * 100
+        bar_len = 20
+        filled = int(bar_len * done / total)
+        bar = "#" * filled + "-" * (bar_len - filled)
+        print(f"\r{desc}: [{bar}] {done}/{total} ({percent:5.1f}%)", end="")
+        yield i
+    print()
 
 
 def visualize_batch(
@@ -61,3 +78,33 @@ def visualize_batch(
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
     return save_path
+
+
+def save_sar_ms_channels(
+    sar_ms: torch.Tensor,
+    save_dir: str | Path,
+    prefix: str = "sar_ms",
+    max_items: int = 4,
+) -> list[Path]:
+    """Save each SAR MS channel as a separate image with distinct names.
+
+    Args:
+        sar_ms: (B, C, H, W)
+        save_dir: directory to save images
+        prefix: filename prefix
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    batch = min(sar_ms.shape[0], max_items)
+    saved: list[Path] = []
+
+    total = batch * sar_ms.shape[1]
+    for idx in _progress_iter(total, desc="Saving SAR MS channels"):
+        i = idx // sar_ms.shape[1]
+        c = idx % sar_ms.shape[1]
+        channel = _to_numpy_image(sar_ms[i, c : c + 1])
+        filename = f"{prefix}_sample{i:03d}_ch{c:02d}.png"
+        out_path = save_dir / filename
+        plt.imsave(out_path, np.clip(channel.squeeze(), 0.0, 1.0), cmap="gray")
+        saved.append(out_path)
+    return saved

@@ -9,6 +9,7 @@ from .transforms import (
     normalize_sar,
 )
 from .visualize import visualize_batch
+from .visualize import save_sar_ms_channels, visualize_batch
 
 __all__ = [
     "SAROPTPairedDataset",
@@ -17,6 +18,7 @@ __all__ = [
     "normalize_sar",
     "normalize_opt",
     "visualize_batch",
+    "save_sar_ms_channels",
     "ChannelStatsAccumulator",
     "compute_dataset_channel_stats",
 ]
