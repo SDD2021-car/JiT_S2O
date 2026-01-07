@@ -4,6 +4,8 @@ from sar_opt_pipeline import (
     SARMultiscaleConfig,
     visualize_batch,
     compute_dataset_channel_stats,
+    save_sar_ms_channels,
+    visualize_sar_ms_channels,
 )
 
 
@@ -34,7 +36,21 @@ visualize_batch(
     sar_raw=batch["sar_raw"],
     sar_ms=batch["sar_ms"],
     opt_gt=batch["opt_gt"],
-    save_path="outputs",
+    save_path="outputs/overview.png",
+)
+
+# 4.1) 保存每个通道的 SAR MS 图片（带进度条）
+save_sar_ms_channels(
+    sar_ms=batch["sar_ms"],
+    save_dir="outputs/sar_ms_channels",
+    prefix="sar_ms",
+)
+
+# 4.2) 保存每个样本的 SAR MS 通道网格图（带进度条）
+visualize_sar_ms_channels(
+    sar_ms=batch["sar_ms"],
+    save_dir="outputs/sar_ms_grids",
+    prefix="sar_ms",
 )
 
 # 5) 统计均值方差

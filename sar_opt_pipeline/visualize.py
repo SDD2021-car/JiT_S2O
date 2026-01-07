@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from math import ceil
 from typing import Iterable
 
 import matplotlib.pyplot as plt
@@ -106,5 +107,50 @@ def save_sar_ms_channels(
         filename = f"{prefix}_sample{i:03d}_ch{c:02d}.png"
         out_path = save_dir / filename
         plt.imsave(out_path, np.clip(channel.squeeze(), 0.0, 1.0), cmap="gray")
+        saved.append(out_path)
+    return saved
+
+
+def visualize_sar_ms_channels(
+    sar_ms: torch.Tensor,
+    save_dir: str | Path,
+    prefix: str = "sar_ms",
+    max_items: int = 4,
+    cols: int = 4,
+) -> list[Path]:
+    """Visualize each SAR MS sample with all channels in a grid.
+
+    Args:
+        sar_ms: (B, C, H, W)
+        save_dir: directory to save images
+        prefix: filename prefix
+        cols: number of columns in the grid
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    batch = min(sar_ms.shape[0], max_items)
+    saved: list[Path] = []
+
+    channels = sar_ms.shape[1]
+    rows = ceil(channels / cols)
+    for i in _progress_iter(batch, desc="Saving SAR MS grids"):
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 3, rows * 3))
+        if rows == 1 and cols == 1:
+            axes = np.array([[axes]])
+        elif rows == 1:
+            axes = np.array([axes])
+
+        for c in range(rows * cols):
+            ax = axes[c // cols, c % cols]
+            if c < channels:
+                channel = _to_numpy_image(sar_ms[i, c : c + 1])
+                ax.imshow(np.clip(channel.squeeze(), 0.0, 1.0), cmap="gray")
+                ax.set_title(f"Ch {c:02d}")
+            ax.axis("off")
+
+        fig.tight_layout()
+        out_path = save_dir / f"{prefix}_sample{i:03d}_grid.png"
+        fig.savefig(out_path, dpi=150)
+        plt.close(fig)
         saved.append(out_path)
     return saved
