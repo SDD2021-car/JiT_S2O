@@ -64,7 +64,7 @@ class SAROPTPairedDataset(Dataset):
         sar_path = self.sar_files[idx]
         opt_path = self.opt_files[idx]
 
-        sar_img = Image.open(sar_path).convert("RGB")
+        sar_img = Image.open(sar_path).convert("L")
         opt_img = Image.open(opt_path).convert("RGB")
 
         if self.shared_transform is not None:
