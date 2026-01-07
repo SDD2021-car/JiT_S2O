@@ -68,38 +68,30 @@ def _local_stats(tensor: torch.Tensor, window: int, eps: float) -> tuple[torch.T
     return mean, std
 
 
-def compute_sar_multiscale_channels(
-    sar: torch.Tensor, config: SARMultiscaleConfig
-) -> list[tuple[str, torch.Tensor]]:
-    """Compute multi-scale structure channels for SAR with names."""
-    channels: list[tuple[str, torch.Tensor]] = []
+def compute_sar_multiscale(sar: torch.Tensor, config: SARMultiscaleConfig) -> torch.Tensor:
+    """Compute multi-scale structure channels for SAR.
+
+    Outputs 3-6 channels: sobel_x/y, laplacian, local variance, local contrast.
+    """
+    channels = []
 
     sobel_x_kernel = torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]], dtype=sar.dtype)
     sobel_y_kernel = torch.tensor([[1, 2, 1], [0, 0, 0], [-1, -2, -1]], dtype=sar.dtype)
     laplacian_kernel = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=sar.dtype)
 
     if config.sobel:
-        channels.append(("sobel_x", _conv2d_single_channel(sar, sobel_x_kernel)))
-        channels.append(("sobel_y", _conv2d_single_channel(sar, sobel_y_kernel)))
+        channels.append(_conv2d_single_channel(sar, sobel_x_kernel))
+        channels.append(_conv2d_single_channel(sar, sobel_y_kernel))
     if config.laplacian:
-        channels.append(("laplacian", _conv2d_single_channel(sar, laplacian_kernel)))
+        channels.append(_conv2d_single_channel(sar, laplacian_kernel))
 
     if config.local_variance or config.local_contrast:
         mean, std = _local_stats(sar, window=config.local_window, eps=config.eps)
         if config.local_variance:
-            channels.append(("local_variance", std**2))
+            channels.append(std**2)
         if config.local_contrast:
-            channels.append(("local_contrast", std / (mean + config.eps)))
+            channels.append(std / (mean + config.eps))
 
     if not channels:
         raise ValueError("At least one SAR multiscale channel must be enabled.")
-    return channels
-
-
-def compute_sar_multiscale(sar: torch.Tensor, config: SARMultiscaleConfig) -> torch.Tensor:
-    """Compute multi-scale structure channels for SAR.
-
-    Outputs 3-6 channels: sobel_x/y, laplacian, local variance, local contrast.
-    """
-    channels = compute_sar_multiscale_channels(sar, config=config)
-    return torch.cat([item[1] for item in channels], dim=0)
+    return torch.cat(channels, dim=0)
