@@ -25,7 +25,7 @@ class SAROPTPairedDataset(Dataset):
     """Paired SAR/OPT dataset producing SAR raw + multiscale structure + OPT target.
 
     Output:
-        sar_raw: (1, H, W) tensor
+        sar_raw: (1, H, W) or (3, H, W) tensor
         sar_ms:  (C, H, W) tensor, C in [3, 6]
         opt_gt:  (3, H, W) tensor
     """
@@ -64,7 +64,7 @@ class SAROPTPairedDataset(Dataset):
         sar_path = self.sar_files[idx]
         opt_path = self.opt_files[idx]
 
-        sar_img = Image.open(sar_path).convert("L")
+        sar_img = Image.open(sar_path).convert("RGB")
         opt_img = Image.open(opt_path).convert("RGB")
 
         if self.shared_transform is not None:

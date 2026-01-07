@@ -21,7 +21,7 @@ def normalize_sar(sar: torch.Tensor, clip_max: float = 2.0) -> torch.Tensor:
     """Log + clip normalization for SAR (stable speckle).
 
     Args:
-        sar: (1, H, W) tensor in [0, 1] or raw scale.
+        sar: (1, H, W) or (3, H, W) tensor in [0, 1] or raw scale.
         clip_max: Upper bound after log1p.
     """
     sar = torch.log1p(torch.clamp(sar, min=0.0))
