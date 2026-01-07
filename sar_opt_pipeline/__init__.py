@@ -4,6 +4,7 @@ from .dataset import SAROPTPairedDataset
 from .stats import ChannelStatsAccumulator, compute_dataset_channel_stats
 from .transforms import (
     SARMultiscaleConfig,
+    compute_sar_multiscale_channels,
     compute_sar_multiscale,
     normalize_opt,
     normalize_sar,
@@ -13,6 +14,7 @@ from .visualize import save_sar_ms_channels, visualize_batch, visualize_sar_ms_c
 __all__ = [
     "SAROPTPairedDataset",
     "SARMultiscaleConfig",
+    "compute_sar_multiscale_channels",
     "compute_sar_multiscale",
     "normalize_sar",
     "normalize_opt",

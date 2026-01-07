@@ -1,9 +1,11 @@
+import torch
 from torch.utils.data import DataLoader
 from sar_opt_pipeline import (
     SAROPTPairedDataset,
     SARMultiscaleConfig,
     visualize_batch,
     compute_dataset_channel_stats,
+    compute_sar_multiscale_channels,
     save_sar_ms_channels,
     visualize_sar_ms_channels,
 )
@@ -52,6 +54,13 @@ visualize_sar_ms_channels(
     save_dir="outputs/sar_ms_grids",
     prefix="sar_ms",
 )
+
+# 4.3) 检查每一种 SAR 特征的提取是否在 GPU 上
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+sar_raw_device = batch["sar_raw"].to(device)
+channels = compute_sar_multiscale_channels(sar_raw_device, config=ms_cfg)
+gpu_status = {name: tensor.is_cuda for name, tensor in channels}
+print("sar_ms channels on cuda:", gpu_status)
 
 # 5) 统计均值方差
 stats = compute_dataset_channel_stats(dataset, batch_size=4, num_workers=0)
