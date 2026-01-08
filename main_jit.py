@@ -198,9 +198,12 @@ def main(args):
     )
     print(dataset_train)
 
-    sampler_train = torch.utils.data.DistributedSampler(
-        dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-    )
+    if args.distributed:
+        sampler_train = torch.utils.data.DistributedSampler(
+            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+        )
+    else:
+        sampler_train = torch.utils.data.RandomSampler(dataset_train)
     print("Sampler_train =", sampler_train)
 
     data_loader_train = torch.utils.data.DataLoader(
@@ -239,11 +242,11 @@ def main(args):
             output_device=args.gpu,
             find_unused_parameters=False,
         )
+        model_without_ddp = model.module
     else:
         # 单卡/非分布式
         model = model.cuda()
-
-    model_without_ddp = model.module
+        model_without_ddp = model
 
     # Set up optimizer with weight decay adjustment for bias and norm layers
     param_groups = misc.add_weight_decay(model_without_ddp, args.weight_decay)

@@ -4,6 +4,10 @@
 
 CUDA_VISIBLE_DEVICES=7 torchrun --nproc_per_node=1 main_jit.py
 
+### Single GPU (no torchrun)
+
+CUDA_VISIBLE_DEVICES=7 python main_jit.py
+
 ### Train with different lr:
 
 CUDA_VISIBLE_DEVICES=6 torchrun --nproc_per_node=1 --master_port=29505 main_jit.py \

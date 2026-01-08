@@ -73,15 +73,19 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     model_without_ddp.eval()
     world_size = misc.get_world_size()
     local_rank = misc.get_rank()
+    distributed = misc.is_dist_avail_and_initialized()
 
     transform_eval = transforms.Compose([
         transforms.Resize((args.img_size, args.img_size)),
         transforms.PILToTensor()
     ])
     sar_dataset = ImageDirDataset(args.sar_test_path, transform=transform_eval, mode="L")
-    sampler = torch.utils.data.DistributedSampler(
-        sar_dataset, num_replicas=world_size, rank=local_rank, shuffle=False
-    )
+    if distributed:
+        sampler = torch.utils.data.DistributedSampler(
+            sar_dataset, num_replicas=world_size, rank=local_rank, shuffle=False
+        )
+    else:
+        sampler = torch.utils.data.SequentialSampler(sar_dataset)
     data_loader = torch.utils.data.DataLoader(
         sar_dataset,
         sampler=sampler,
@@ -159,7 +163,8 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             sampled_images = model_without_ddp.generate(sar_img, labels_gen)
 
-        torch.distributed.barrier()
+        if distributed:
+            torch.distributed.barrier()
 
         # denormalize images
         sampled_images = (sampled_images + 1) / 2
@@ -181,7 +186,8 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
 
             _save_image(gen_img, out_path)
 
-    torch.distributed.barrier()
+    if distributed:
+        torch.distributed.barrier()
 
     # back to no ema
     print("Switch back from ema")
@@ -215,4 +221,5 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
         if not args.keep_outputs:
             shutil.rmtree(save_folder)
 
-    torch.distributed.barrier()
+    if distributed:
+        torch.distributed.barrier()
