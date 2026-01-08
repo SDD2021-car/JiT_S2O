@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image
 import torch
 import torchvision.transforms as transforms
+from tqdm import tqdm
 
 from denoiser import Denoiser
 from main_jit import get_args_parser
@@ -122,19 +123,21 @@ def run_sampling(args, model, device):
     batch_size = args.gen_bsz
     img_count = 0
 
-    while img_count < num_images:
-        cur_batch = min(batch_size, num_images - img_count)
-        with torch.amp.autocast(device.type, dtype=torch.bfloat16):
-            sampled_images = sample_unconditional(model, cur_batch, device)
+    with tqdm(total=num_images, desc="Unconditional sampling", unit="img") as pbar:
+        while img_count < num_images:
+            cur_batch = min(batch_size, num_images - img_count)
+            with torch.amp.autocast(device.type, dtype=torch.bfloat16):
+                sampled_images = sample_unconditional(model, cur_batch, device)
 
-        sampled_images = (sampled_images + 1) / 2
-        sampled_images = sampled_images.detach().cpu().float()
-        for b_id in range(sampled_images.size(0)):
-            img_id = img_count + b_id
-            gen_img = _to_uint8_image(sampled_images[b_id])
-            out_path = os.path.join(save_folder, f"uncond_{img_id:05d}.png")
-            _save_image(gen_img, out_path)
-        img_count += sampled_images.size(0)
+            sampled_images = (sampled_images + 1) / 2
+            sampled_images = sampled_images.detach().cpu().float()
+            for b_id in range(sampled_images.size(0)):
+                img_id = img_count + b_id
+                gen_img = _to_uint8_image(sampled_images[b_id])
+                out_path = os.path.join(save_folder, f"uncond_{img_id:05d}.png")
+                _save_image(gen_img, out_path)
+            img_count += sampled_images.size(0)
+            pbar.update(sampled_images.size(0))
 
 
 def run_training(args, model, device, checkpoint):
