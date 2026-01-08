@@ -1,3 +1,38 @@
+# 无条件采样
+# python unconditional_generate.py \
+#   --mode sample \
+#   --resume /path/to/checkpoint-dir \
+#   --output_dir /path/to/output \
+#   --num_images 100 \
+#   --gen_bsz 8 \
+#   --img_size 512 \
+#   --sar_concat_mode none
+
+# 如需使用 EMA 权重生成
+# python unconditional_generate.py \
+#   --mode sample \
+#   --resume /path/to/checkpoint-dir \
+#   --use_ema \
+#   --sar_concat_mode none
+
+#  基于 checkpoint 再训练（finetune）
+# python unconditional_generate.py \
+#   --mode train \
+#   --resume /path/to/checkpoint-dir \
+#   --opt_train_path /path/to/opt_train_images \
+#   --output_dir /path/to/output \
+#   --epochs 10 \
+#   --batch_size 8 \
+#   --img_size 512 \
+#   --sar_concat_mode none
+
+# 如果希望从 checkpoint 继续优化器状态（包括学习率、动量等）
+# python unconditional_generate.py \
+#   --mode train \
+#   --resume /path/to/checkpoint-dir \
+#   --resume_optimizer \
+#   --opt_train_path /path/to/opt_train_images \
+#   --sar_concat_mode none
 import argparse
 import os
 
