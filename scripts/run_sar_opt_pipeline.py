@@ -83,7 +83,7 @@ visualize_sar_encoder_layers(
 # 4.4) 检查每一种 SAR 特征的提取是否在 GPU 上
 sar_raw_device = batch["sar_raw"].to(device)
 channels = compute_sar_multiscale_channels(sar_raw_device, config=ms_cfg)
-gpu_status = {name: tensor.is_cuda for name, tensor in channels}
+gpu_status = {name: tensor.is_cuda for name, tensor in channels.items()}
 print("sar_ms channels on cuda:", gpu_status)
 
 # 5) 统计均值方差
