@@ -1,6 +1,11 @@
+import copy
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from model_jit import JiT_models
+from sar_encoder import SAREncoder
+from subspace_head import SubspaceHead
 
 
 class Denoiser(nn.Module):
@@ -34,6 +39,8 @@ class Denoiser(nn.Module):
         )
         self.img_size = args.img_size
         self.num_classes = args.class_num
+        self.subspace_enabled = getattr(args, "enable_subspace", False)
+        self.subspace_reg_lambda = getattr(args, "subspace_reg_lambda", 1e-4)
 
         self.label_drop_prob = args.label_drop_prob
         self.P_mean = args.P_mean
@@ -56,10 +63,40 @@ class Denoiser(nn.Module):
         self.mapper_loss_weight = args.mapper_loss_weight
         self.proto_loss_weight = args.prototype_loss_weight
 
+        if self.subspace_enabled:
+            self.sar_encoder = SAREncoder(
+                input_size=args.img_size,
+                patch_size=self.net.patch_size,
+                in_channels=getattr(args, "subspace_in_channels", 1),
+                embed_dim=self.net.hidden_size,
+                token_count=self.net.x_embedder.num_patches,
+                scheme=getattr(args, "subspace_scheme", "B"),
+            )
+            self.subspace_head = SubspaceHead(
+                embed_dim=self.net.hidden_size,
+                rank_k=getattr(args, "subspace_rank", 16),
+            )
+            self.subspace_match_weight = nn.Parameter(
+                torch.tensor(getattr(args, "subspace_match_weight_init", 1.0))
+            )
+            self.subspace_ortho_weight = nn.Parameter(
+                torch.tensor(getattr(args, "subspace_ortho_weight_init", 0.1))
+            )
+            self.prior_net = copy.deepcopy(self.net)
+            self.prior_net.eval()
+            for param in self.prior_net.parameters():
+                param.requires_grad = False
+
     def drop_labels(self, labels):
         drop = torch.rand(labels.shape[0], device=labels.device) < self.label_drop_prob
         out = torch.where(drop, torch.full_like(labels, self.num_classes), labels)
         return out
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        if self.subspace_enabled:
+            self.prior_net.eval()
+        return self
 
     def sample_t(self, n: int, device=None):
         z = torch.randn(n, device=device) * self.P_std + self.P_mean
@@ -102,6 +139,28 @@ class Denoiser(nn.Module):
                 loss = loss + self.mapper_loss_weight * mapper_loss
             if proto_loss is not None:
                 loss = loss + self.proto_loss_weight * proto_loss
+
+        if self.training and self.subspace_enabled:
+            if sar_img is None:
+                raise ValueError("Subspace training requires sar_img inputs.")
+            with torch.no_grad():
+                prior_labels = torch.full_like(labels, self.num_classes)
+                prior_x = self.prior_net(z, t.flatten(), prior_labels, sar_img=None)
+                v_prior = (prior_x - z) / (1 - t).clamp_min(self.t_eps)
+                v_tokens = self.net.x_embedder(v)
+                v_prior_tokens = self.net.x_embedder(v_prior)
+            _, pyramid = self.sar_encoder(sar_img, return_pyramid=True)
+            bmat = self.subspace_head(pyramid["proj"])
+            v_proj = self.subspace_head.project_tokens(
+                v_prior_tokens,
+                bmat,
+                reg_lambda=self.subspace_reg_lambda,
+            )
+            token_loss = F.mse_loss(v_proj, v_tokens)
+            ortho_loss = self.subspace_head.orthogonality_loss(bmat)
+            match_weight = F.softplus(self.subspace_match_weight)
+            ortho_weight = F.softplus(self.subspace_ortho_weight)
+            loss = loss + match_weight * token_loss + ortho_weight * ortho_loss
 
         return loss
 

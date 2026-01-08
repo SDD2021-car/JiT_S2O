@@ -84,6 +84,14 @@ def get_args_parser():
     parser.add_argument('--dino_ckpt_path', default="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth", type=str, help='Local path to DINOv3 checkpoint')
     parser.set_defaults(dino_pretrained=True)
     parser.add_argument('--disable_dino', action='store_true', help='Disable DINOv3 components')
+    parser.add_argument('--enable_subspace', default=True, help='Enable subspace head training')
+    parser.add_argument('--subspace_rank', default=16, type=int, help='Low-rank dimension for subspace basis')
+    parser.add_argument('--subspace_reg_lambda', default=1e-4, type=float, help='Projection regularization lambda')
+    parser.add_argument('--subspace_match_weight_init', default=1.0, type=float, help='Init weight for token loss')
+    parser.add_argument('--subspace_ortho_weight_init', default=0.1, type=float, help='Init weight for ortho loss')
+    parser.add_argument('--subspace_in_channels', default=1, type=int, help='Input channels for SAR encoder')
+    parser.add_argument('--subspace_scheme', default='B', type=str, choices=['A', 'B'],
+                        help='SAR encoder scheme for subspace head')
     parser.add_argument('--sar_concat_mode', default='raw+dino', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
                         help='Concatenate SAR input (raw/DINO/both) along channel dimension')
     parser.add_argument('--sar_concat_channels', default=1, type=int,
@@ -119,18 +127,18 @@ def get_args_parser():
                         help='Generation batch size')
 
     # dataset
-    parser.add_argument('--sar_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA', type=str,
+    parser.add_argument('--sar_train_path', default='/data/hjf/Dataset/SEN12_Scene/trainA', type=str,
                         help='Path to the SAR training dataset')
-    parser.add_argument('--opt_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB', type=str,
+    parser.add_argument('--opt_train_path', default='/data/hjf/Dataset/SEN12_Scene/trainB', type=str,
                         help='Path to the optical training dataset')
-    parser.add_argument('--sar_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/testA', type=str,
+    parser.add_argument('--sar_test_path', default='/data/hjf/Dataset/SEN12_Scene/testA', type=str,
                         help='Path to the SAR testing dataset')
-    parser.add_argument('--opt_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/testB', type=str,
+    parser.add_argument('--opt_test_path', default='/data/hjf/Dataset/SEN12_Scene/testB', type=str,
                         help='Path to the optical testing dataset')
     parser.add_argument('--class_num', default=1000, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/unconditional_results',
+    parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default="/data/yjy_data/JiT/checkpoint-last.pth",
                         help='Folder that contains checkpoint to resume from')
@@ -149,6 +157,9 @@ def get_args_parser():
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://',
                         help='URL used to set up distributed training')
+
+    parser.add_argument('--gpu', default=2, type=int, help='GPU id to use.')
+    parser.add_argument('--distributed', default=False, help='Use DDP')
 
     return parser
 
@@ -220,7 +231,18 @@ def main(args):
     print("Actual lr: {:.2e}".format(args.lr))
     print("Effective batch size: %d" % eff_batch_size)
 
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+    if getattr(args, "distributed", False):
+        torch.cuda.set_device(args.gpu)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model.cuda(args.gpu),
+            device_ids=[args.gpu],
+            output_device=args.gpu,
+            find_unused_parameters=False,
+        )
+    else:
+        # 单卡/非分布式
+        model = model.cuda()
+
     model_without_ddp = model.module
 
     # Set up optimizer with weight decay adjustment for bias and norm layers

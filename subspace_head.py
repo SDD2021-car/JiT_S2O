@@ -1,11 +1,12 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
 
 class SubspaceHead(nn.Module):
     """Subspace head for conditional low-rank basis prediction."""
-
-    def __init__(self, embed_dim: int = 768, rank_k: int = 16, hidden_dim: int | None = None):
+    def __init__(self, embed_dim: int = 768, rank_k: int = 16, hidden_dim: Optional[int] = None):
         super().__init__()
         if hidden_dim is None:
             hidden_dim = embed_dim
