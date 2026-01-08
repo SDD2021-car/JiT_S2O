@@ -83,7 +83,7 @@ def get_args_parser():
     parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
     parser.add_argument('--dino_ckpt_path', default="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth", type=str, help='Local path to DINOv3 checkpoint')
     parser.set_defaults(dino_pretrained=True)
-    parser.add_argument('--disable_dino', action='store_true', help='Disable DINOv3 components')
+    parser.add_argument('--disable_dino', default=True, help='Disable DINOv3 components')
     parser.add_argument('--enable_subspace', default=True, help='Enable subspace head training')
     parser.add_argument('--subspace_rank', default=16, type=int, help='Low-rank dimension for subspace basis')
     parser.add_argument('--subspace_reg_lambda', default=1e-4, type=float, help='Projection regularization lambda')
@@ -92,7 +92,7 @@ def get_args_parser():
     parser.add_argument('--subspace_in_channels', default=1, type=int, help='Input channels for SAR encoder')
     parser.add_argument('--subspace_scheme', default='B', type=str, choices=['A', 'B'],
                         help='SAR encoder scheme for subspace head')
-    parser.add_argument('--sar_concat_mode', default='raw+dino', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
+    parser.add_argument('--sar_concat_mode', default='none', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
                         help='Concatenate SAR input (raw/DINO/both) along channel dimension')
     parser.add_argument('--sar_concat_channels', default=1, type=int,
                         help='Number of channels to concatenate when sar_concat_mode is enabled')
