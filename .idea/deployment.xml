@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="yjy@10.104.6.25:2200 (63)" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="yjy@10.104.6.25:2200 (64)" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
       <paths name="hjf@10.104.6.173:22">
@@ -770,6 +770,13 @@
         </serverdata>
       </paths>
       <paths name="yjy@10.104.6.25:2200 (63)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/data/yjy_data/FSPCG" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="yjy@10.104.6.25:2200 (64)">
         <serverdata>
           <mappings>
             <mapping deploy="/data/yjy_data/FSPCG" local="$PROJECT_DIR$" />
