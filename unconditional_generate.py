@@ -92,7 +92,7 @@ def load_checkpoint(model, resume_path, use_ema=True):
         checkpoint_path = resume_path
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location="cuda", weights_only=False)
     if use_ema and "model_ema1" in checkpoint:
         model.load_state_dict(checkpoint["model_ema1"])
     else:
@@ -210,6 +210,7 @@ def main():
 
     torch.manual_seed(args.seed)
 
+    args.disable_dino = True
     if args.sar_concat_mode != "none":
         raise ValueError("Unconditional generation requires --sar_concat_mode none.")
 

@@ -331,11 +331,15 @@ class JiT(nn.Module):
         dino_ckpt_path=None,
         prototype_path=None,
         sar_concat_mode="none",
-        sar_concat_channels=1
+        sar_concat_channels=1,
+        use_dino=True
     ):
         super().__init__()
+        self.use_dino = use_dino
         self.sar_concat_mode = sar_concat_mode
         self.sar_concat_channels = sar_concat_channels
+        if not self.use_dino and self.sar_concat_mode in ("dino", "raw+dino"):
+            raise ValueError("DINO is disabled but sar_concat_mode requires DINO features.")
         if self.sar_concat_mode != "none":
             in_channels = in_channels + self._get_sar_concat_channel_count()
         self.in_channels = in_channels
@@ -396,27 +400,38 @@ class JiT(nn.Module):
         # linear predict
         self.final_layer = FinalLayer(hidden_size, patch_size, self.out_channels)
 
-        # frozen dino encoder + mapper
-        self.dino = FrozenDinoV3(
-            model_name=dino_model,
-            repo=dino_repo,
-            pretrained=dino_pretrained,
-            ckpt_path=dino_ckpt_path
-        )
-        self.dino_dim = getattr(self.dino.model, "embed_dim", getattr(self.dino.model, "num_features", hidden_size))
-        self.mapper_in = nn.Linear(self.dino_dim, hidden_size, bias=True)
-        self.mapper_blocks = nn.ModuleList([
-            MapperBlock(hidden_size, num_heads, mlp_ratio=mapper_mlp_ratio,
-                        attn_drop=mapper_attn_drop, proj_drop=mapper_proj_drop)
-            for _ in range(mapper_depth)
-        ])
-        self.mapper_out = nn.Linear(hidden_size, self.dino_dim, bias=True)
-        self.cond_proj = nn.Linear(self.dino_dim, hidden_size, bias=True)
-        if self.sar_concat_mode in ("dino", "raw+dino"):
-            self.sar_feat_proj = nn.Conv2d(self.dino_dim, self.sar_concat_channels, kernel_size=1, bias=True)
+        if self.use_dino:
+            # frozen dino encoder + mapper
+            self.dino = FrozenDinoV3(
+                model_name=dino_model,
+                repo=dino_repo,
+                pretrained=dino_pretrained,
+                ckpt_path=dino_ckpt_path
+            )
+            self.dino_dim = getattr(self.dino.model, "embed_dim", getattr(self.dino.model, "num_features", hidden_size))
+            self.mapper_in = nn.Linear(self.dino_dim, hidden_size, bias=True)
+            self.mapper_blocks = nn.ModuleList([
+                MapperBlock(hidden_size, num_heads, mlp_ratio=mapper_mlp_ratio,
+                            attn_drop=mapper_attn_drop, proj_drop=mapper_proj_drop)
+                for _ in range(mapper_depth)
+            ])
+            self.mapper_out = nn.Linear(hidden_size, self.dino_dim, bias=True)
+            self.cond_proj = nn.Linear(self.dino_dim, hidden_size, bias=True)
+            if self.sar_concat_mode in ("dino", "raw+dino"):
+                self.sar_feat_proj = nn.Conv2d(self.dino_dim, self.sar_concat_channels, kernel_size=1, bias=True)
 
-        self.register_buffer("dino_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
-        self.register_buffer("dino_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+            self.register_buffer("dino_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+            self.register_buffer("dino_std", torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+        else:
+            if prototype_path is not None:
+                raise ValueError("Prototype loss requires DINO features; disable prototype_path when use_dino is False.")
+            self.dino = None
+            self.dino_dim = None
+            self.mapper_in = None
+            self.mapper_blocks = nn.ModuleList()
+            self.mapper_out = None
+            self.cond_proj = None
+            self.sar_feat_proj = None
 
         if prototype_path is not None:
             prototypes = torch.load(prototype_path, map_location="cpu")
@@ -458,6 +473,8 @@ class JiT(nn.Module):
         )
 
     def _build_sar_dino_concat(self, sar_img):
+        if not self.use_dino:
+            raise ValueError("SAR DINO features requested while DINO is disabled.")
         sar_input = self._prepare_dino_inputs(sar_img)
         sar_tokens = self.dino(sar_input)
         if sar_tokens.dim() == 3 and sar_tokens.shape[1] > 1 and int((sar_tokens.shape[1] - 1) ** 0.5) ** 2 == (
@@ -512,16 +529,18 @@ class JiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-        nn.init.xavier_uniform_(self.mapper_in.weight)
-        nn.init.constant_(self.mapper_in.bias, 0)
-        nn.init.xavier_uniform_(self.mapper_out.weight)
-        nn.init.constant_(self.mapper_out.bias, 0)
-        nn.init.xavier_uniform_(self.cond_proj.weight)
-        nn.init.constant_(self.cond_proj.bias, 0)
+        if self.use_dino:
+            nn.init.xavier_uniform_(self.mapper_in.weight)
+            nn.init.constant_(self.mapper_in.bias, 0)
+            nn.init.xavier_uniform_(self.mapper_out.weight)
+            nn.init.constant_(self.mapper_out.bias, 0)
+            nn.init.xavier_uniform_(self.cond_proj.weight)
+            nn.init.constant_(self.cond_proj.bias, 0)
 
     def train(self, mode: bool = True):
         super().train(mode)
-        self.dino.eval()
+        if self.use_dino:
+            self.dino.eval()
         return self
 
     def unpatchify(self, x, p):
@@ -539,6 +558,8 @@ class JiT(nn.Module):
         return imgs
 
     def _prepare_dino_inputs(self, img):
+        if not self.use_dino:
+            raise ValueError("DINO inputs requested while DINO is disabled.")
         if img.shape[1] == 1:
             img = img.repeat(1, 3, 1, 1)
         elif img.shape[1] != 3:
@@ -559,6 +580,8 @@ class JiT(nn.Module):
         return tokens
 
     def _encode_condition(self, sar_img, opt_img=None, return_mapper_loss=False):
+        if not self.use_dino:
+            raise ValueError("Condition encoding requires DINO features to be enabled.")
         sar_input = self._prepare_dino_inputs(sar_img)
         sar_tokens = self.dino(sar_input)
         if sar_tokens.dim() == 3 and sar_tokens.shape[1] > 1 and int((sar_tokens.shape[1] - 1) ** 0.5) ** 2 == (
@@ -612,7 +635,7 @@ class JiT(nn.Module):
         cond_tokens = None
         mapper_loss = None
         proto_loss = None
-        if sar_img is not None:
+        if sar_img is not None and self.use_dino:
             cond_tokens, mapper_loss, proto_loss = self._encode_condition(
                 sar_img,
                 opt_img=opt_img,
