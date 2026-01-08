@@ -140,7 +140,7 @@ def get_args_parser():
     # checkpointing
     parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default="/data/yjy_data/JiT/checkpoint-last.pth",
+    parser.add_argument('--resume', default="/data/yjy_data/JiT",
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
