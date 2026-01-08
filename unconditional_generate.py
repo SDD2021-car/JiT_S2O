@@ -4,9 +4,12 @@ import os
 import numpy as np
 from PIL import Image
 import torch
+import torchvision.transforms as transforms
 
 from denoiser import Denoiser
 from main_jit import get_args_parser
+import util.misc as misc
+from util.datasets import ImageDirDataset
 
 
 def _to_uint8_image(img):
@@ -82,7 +85,7 @@ def sample_unconditional(model, batch_size, device):
 
 def load_checkpoint(model, resume_path, use_ema=True):
     if resume_path is None:
-        return
+        return None
     if os.path.isdir(resume_path):
         checkpoint_path = os.path.join(resume_path, "checkpoint-last.pth")
     else:
@@ -94,6 +97,7 @@ def load_checkpoint(model, resume_path, use_ema=True):
         model.load_state_dict(checkpoint["model_ema1"])
     else:
         model.load_state_dict(checkpoint["model"])
+    return checkpoint
 
 
 def build_output_dir(args, model):
@@ -104,24 +108,13 @@ def build_output_dir(args, model):
 def get_parser():
     parser = argparse.ArgumentParser("JiT unconditional generation", parents=[get_args_parser()])
     parser.add_argument("--use_ema", action="store_true", help="Load EMA weights if available")
+    parser.add_argument("--mode", default="sample", choices=["sample", "train"], help="Run sampling or finetuning")
+    parser.add_argument("--resume_optimizer", action="store_true", help="Load optimizer state when resuming training")
     return parser
 
 
-def main():
-    parser = get_parser()
-    args = parser.parse_args()
-
-    torch.manual_seed(args.seed)
-
-    if args.sar_concat_mode != "none":
-        raise ValueError("Unconditional generation requires --sar_concat_mode none.")
-
-    device = torch.device(args.device)
-    model = Denoiser(args).to(device)
+def run_sampling(args, model, device):
     model.eval()
-
-    load_checkpoint(model, args.resume, use_ema=args.use_ema)
-
     save_folder = build_output_dir(args, model)
     os.makedirs(save_folder, exist_ok=True)
 
@@ -142,6 +135,93 @@ def main():
             out_path = os.path.join(save_folder, f"uncond_{img_id:05d}.png")
             _save_image(gen_img, out_path)
         img_count += sampled_images.size(0)
+
+
+def run_training(args, model, device, checkpoint):
+    model.train(True)
+
+    transform_train = transforms.Compose([
+        transforms.Resize((args.img_size, args.img_size)),
+        transforms.PILToTensor(),
+    ])
+    dataset_train = ImageDirDataset(args.opt_train_path, transform=transform_train, mode="RGB")
+    data_loader = torch.utils.data.DataLoader(
+        dataset_train,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=args.pin_mem,
+        shuffle=True,
+        drop_last=True,
+    )
+
+    eff_batch_size = args.batch_size
+    if args.lr is None:
+        args.lr = args.blr * eff_batch_size / 256
+
+    param_groups = misc.add_weight_decay(model, args.weight_decay)
+    optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
+
+    if checkpoint is not None and args.resume_optimizer:
+        if "optimizer" in checkpoint and "epoch" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            args.start_epoch = checkpoint["epoch"] + 1
+
+    if checkpoint is not None and "model_ema1" in checkpoint and "model_ema2" in checkpoint:
+        ema_state_dict1 = checkpoint["model_ema1"]
+        ema_state_dict2 = checkpoint["model_ema2"]
+        model.ema_params1 = [ema_state_dict1[name].to(device) for name, _ in model.named_parameters()]
+        model.ema_params2 = [ema_state_dict2[name].to(device) for name, _ in model.named_parameters()]
+    else:
+        model.ema_params1 = [p.detach().clone() for p in model.parameters()]
+        model.ema_params2 = [p.detach().clone() for p in model.parameters()]
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    for epoch in range(args.start_epoch, args.epochs):
+        for data_iter_step, (opt_img, _names) in enumerate(data_loader):
+            opt_img = opt_img.to(device, non_blocking=True).to(torch.float32).div_(255)
+            opt_img = opt_img * 2.0 - 1.0
+            labels = torch.zeros(opt_img.size(0), device=device, dtype=torch.long)
+
+            with torch.amp.autocast(device.type, dtype=torch.bfloat16):
+                loss = model(opt_img, sar_img=None, labels=labels)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            model.update_ema()
+
+            if data_iter_step % args.log_freq == 0:
+                print(f"Epoch {epoch} iter {data_iter_step}: loss {loss.item():.6f}")
+
+        if epoch % args.save_last_freq == 0 or epoch + 1 == args.epochs:
+            misc.save_model(
+                args=args,
+                model_without_ddp=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                epoch_name="last",
+            )
+
+
+def main():
+    parser = get_parser()
+    args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+
+    if args.sar_concat_mode != "none":
+        raise ValueError("Unconditional generation requires --sar_concat_mode none.")
+
+    device = torch.device(args.device)
+    model = Denoiser(args).to(device)
+
+    checkpoint = load_checkpoint(model, args.resume, use_ema=args.use_ema)
+
+    if args.mode == "train":
+        run_training(args, model, device, checkpoint)
+    else:
+        run_sampling(args, model, device)
 
 
 if __name__ == "__main__":
