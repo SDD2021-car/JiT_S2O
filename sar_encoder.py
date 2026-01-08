@@ -142,23 +142,38 @@ class SAREncoder(nn.Module):
             self.pool = nn.AdaptiveAvgPool2d((token_hw, token_hw))
             self.proj = nn.Conv2d(256, embed_dim, kernel_size=1, bias=True)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        return_pyramid: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         if self.scheme == "A":
             # 先进行相干斑噪声的稳定化，再提取 patch tokens
             x = self.stabilizer(x)
             tokens = self.patch_embed(x)
             for block in self.blocks:
                 tokens = block(tokens)
+            if return_pyramid:
+                raise ValueError("方案 A 不提供 CNN 金字塔特征。")
             return tokens
 
         # 方案 B：多尺度 CNN 提取稳定空间特征，再对齐为 token 序列
         x = self.stem(x)
-        x = self.stage1(x)
-        x = self.stage2(x)
-        x = self.stage3(x)
-        x = self.pool(x)
-        x = self.proj(x)
-        tokens = x.flatten(2).transpose(1, 2)
+        stage1 = self.stage1(x)
+        stage2 = self.stage2(stage1)
+        stage3 = self.stage3(stage2)
+        pooled = self.pool(stage3)
+        proj = self.proj(pooled)
+        tokens = proj.flatten(2).transpose(1, 2)
         if tokens.size(1) != self.token_count:
             raise ValueError(f"Token 数量不匹配: {tokens.size(1)} != {self.token_count}")
+        if return_pyramid:
+            pyramid = {
+                "stage1": stage1,
+                "stage2": stage2,
+                "stage3": stage3,
+                "pooled": pooled,
+                "proj": proj,
+            }
+            return tokens, pyramid
         return tokens

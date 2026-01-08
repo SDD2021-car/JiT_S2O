@@ -18,6 +18,18 @@ def _to_numpy_image(tensor: torch.Tensor) -> np.ndarray:
     return tensor.numpy()
 
 
+def _normalize_feature_map(feature: torch.Tensor) -> np.ndarray:
+    feature = feature.detach().float().cpu()
+    if feature.dim() == 3:
+        feature = feature.mean(dim=0)
+    feature = feature.numpy()
+    min_val = float(feature.min())
+    max_val = float(feature.max())
+    if max_val - min_val < 1e-6:
+        return np.zeros_like(feature)
+    return (feature - min_val) / (max_val - min_val)
+
+
 def _progress_iter(total: int, desc: str) -> Iterable[int]:
     if total <= 0:
         return []
@@ -151,4 +163,38 @@ def visualize_sar_ms_channels(
         fig.savefig(out_path, dpi=150)
         plt.close(fig)
         saved.append(out_path)
+    return saved
+
+
+def visualize_sar_encoder_layers(
+    layers: dict[str, torch.Tensor],
+    save_dir: str | Path,
+    prefix: str = "sar_encoder",
+    max_items: int = 4,
+) -> list[Path]:
+    """将 SAR encoder 各层特征输出可视化保存为图片。
+
+    Args:
+        layers: dict of (name -> feature map), each is (B, C, H, W)
+        save_dir: output directory
+    """
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    if not layers:
+        return []
+
+    batch = min(next(iter(layers.values())).shape[0], max_items)
+    saved: list[Path] = []
+    total = batch * len(layers)
+
+    layer_items = list(layers.items())
+    for idx in _progress_iter(total, desc="Saving SAR encoder layers"):
+        sample_idx = idx // len(layer_items)
+        layer_idx = idx % len(layer_items)
+        layer_name, feature = layer_items[layer_idx]
+        fmap = _normalize_feature_map(feature[sample_idx])
+        out_path = save_dir / f"{prefix}_sample{sample_idx:03d}_{layer_name}.png"
+        plt.imsave(out_path, np.clip(fmap, 0.0, 1.0), cmap="viridis")
+        saved.append(out_path)
+
     return saved

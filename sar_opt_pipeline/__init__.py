@@ -9,7 +9,12 @@ from .transforms import (
     normalize_opt,
     normalize_sar,
 )
-from .visualize import save_sar_ms_channels, visualize_batch, visualize_sar_ms_channels
+from .visualize import (
+    save_sar_ms_channels,
+    visualize_batch,
+    visualize_sar_ms_channels,
+    visualize_sar_encoder_layers,
+)
 
 __all__ = [
     "SAROPTPairedDataset",
@@ -21,6 +26,7 @@ __all__ = [
     "visualize_batch",
     "save_sar_ms_channels",
     "visualize_sar_ms_channels",
+    "visualize_sar_encoder_layers",
     "ChannelStatsAccumulator",
     "compute_dataset_channel_stats",
 ]

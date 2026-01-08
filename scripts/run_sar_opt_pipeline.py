@@ -8,7 +8,9 @@ from sar_opt_pipeline import (
     compute_dataset_channel_stats,
     save_sar_ms_channels,
     visualize_sar_ms_channels,
+    visualize_sar_encoder_layers,
 )
+from sar_encoder import SAREncoder
 
 
 # 1) 配置多尺度通道（3~6 通道）
@@ -48,6 +50,8 @@ save_sar_ms_channels(
     prefix="sar_ms",
 )
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # 4.2) 保存每个样本的 SAR MS 通道网格图（带进度条）
 visualize_sar_ms_channels(
     sar_ms=batch["sar_ms"],
@@ -55,8 +59,28 @@ visualize_sar_ms_channels(
     prefix="sar_ms",
 )
 
-# 4.3) 检查每一种 SAR 特征的提取是否在 GPU 上
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# 4.3) SAR encoder 方案 B：以 sar_ms 作为输入并输出分层可视化
+sar_ms = batch["sar_ms"].to(device)
+input_size = sar_ms.shape[-1]
+patch_size = 16
+token_count = (input_size // patch_size) ** 2
+sar_encoder = SAREncoder(
+    input_size=input_size,
+    patch_size=patch_size,
+    in_channels=sar_ms.shape[1],
+    embed_dim=768,
+    token_count=token_count,
+    scheme="B",
+).to(device)
+with torch.no_grad():
+    _tokens, pyramid = sar_encoder(sar_ms, return_pyramid=True)
+visualize_sar_encoder_layers(
+    layers=pyramid,
+    save_dir="outputs/sar_encoder_layers",
+    prefix="sar_encoder",
+)
+
+# 4.4) 检查每一种 SAR 特征的提取是否在 GPU 上
 sar_raw_device = batch["sar_raw"].to(device)
 channels = compute_sar_multiscale_channels(sar_raw_device, config=ms_cfg)
 gpu_status = {name: tensor.is_cuda for name, tensor in channels}
