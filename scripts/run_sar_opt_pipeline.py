@@ -11,6 +11,7 @@ from sar_opt_pipeline import (
     visualize_sar_encoder_layers,
 )
 from sar_encoder import SAREncoder
+from subspace_head import SubspaceHead
 
 
 # 1) 配置多尺度通道（3~6 通道）
@@ -79,6 +80,10 @@ visualize_sar_encoder_layers(
     save_dir="outputs/sar_encoder_layers",
     prefix="sar_encoder",
 )
+subspace_head = SubspaceHead(embed_dim=768, rank_k=16).to(device)
+with torch.no_grad():
+    bmat = subspace_head(pyramid["proj"])
+print("Bmat shape:", bmat.shape)
 
 # 4.4) 检查每一种 SAR 特征的提取是否在 GPU 上
 sar_raw_device = batch["sar_raw"].to(device)
