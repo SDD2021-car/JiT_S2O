@@ -130,7 +130,7 @@ def get_args_parser():
     parser.add_argument('--class_num', default=1000, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/data/yjy_data/JiT/unconditional_results',
+    parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/unconditional_results',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default="/data/yjy_data/JiT/checkpoint-last.pth",
                         help='Folder that contains checkpoint to resume from')
