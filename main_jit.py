@@ -138,7 +138,7 @@ def get_args_parser():
                         help='Frequency (in epochs) for evaluation')
     parser.add_argument('--online_eval', action='store_true')
     parser.add_argument('--evaluate_gen', default=True)
-    parser.add_argument('--gen_bsz', type=int, default=256,
+    parser.add_argument('--gen_bsz', type=int, default=8,
                         help='Generation batch size')
 
     # dataset
