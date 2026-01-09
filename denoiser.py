@@ -95,6 +95,10 @@ class Denoiser(nn.Module):
                     prior_state = prior_checkpoint["model"]
                 else:
                     prior_state = prior_checkpoint
+                if isinstance(prior_state, dict):
+                    has_net_prefix = any(key.startswith("net.") for key in prior_state.keys())
+                    if has_net_prefix:
+                        prior_state = {key.replace("net.", "", 1): value for key, value in prior_state.items()}
                 self.prior_net.load_state_dict(prior_state, strict=True)
             self.prior_net.eval()
             for param in self.prior_net.parameters():

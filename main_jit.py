@@ -92,7 +92,7 @@ def get_args_parser():
     parser.add_argument('--subspace_in_channels', default=1, type=int, help='Input channels for SAR encoder')
     parser.add_argument('--subspace_scheme', default='B', type=str, choices=['A', 'B'],
                         help='SAR encoder scheme for subspace head')
-    parser.add_argument('--prior_ckpt_path', default="/data/yjy_data/JiT", type=str,
+    parser.add_argument('--prior_ckpt_path', default="/data/yjy_data/JiT/checkpoint-last.pth", type=str,
                         help='Path to prior network checkpoint (used for subspace training)')
     parser.add_argument('--sar_concat_mode', default='none', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
                         help='Concatenate SAR input (raw/DINO/both) along channel dimension')
@@ -155,7 +155,7 @@ def get_args_parser():
     # checkpointing
     parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results/scene_650',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default=None,
+    parser.add_argument('--resume', default="/data/yjy_data/FSPCG/conditional_results",
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
@@ -284,7 +284,7 @@ def main(args):
             optimizer.load_state_dict(checkpoint['optimizer'])
             args.start_epoch = checkpoint['epoch'] + 1
             print("Loaded optimizer & scaler state!")
-        del checkpoint
+        # del checkpoint
     else:
         model_without_ddp.ema_params1 = copy.deepcopy(list(model_without_ddp.parameters()))
         model_without_ddp.ema_params2 = copy.deepcopy(list(model_without_ddp.parameters()))
