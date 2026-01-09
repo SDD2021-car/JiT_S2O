@@ -243,12 +243,13 @@ class Denoiser(nn.Module):
         v_prior = (prior_x - z) / (1.0 - t).clamp_min(self.t_eps)
         if sar_img is None:
             return v_prior
-
-        v_proj = self._project_prior_velocity(v_prior, t, prior_labels, sar_img)
-        v_new = v_proj + self.energy_tau * (v_prior - v_proj)
-
         low, high = self.gamma_schedule
         interval_mask = (t < high) & ((low == 0) | (t > low))
+        v_proj = self._project_prior_velocity(v_prior, t, prior_labels, sar_img)
+        v_new = v_proj + self.energy_tau * (v_prior - v_proj)
+        # ratio = v_new.norm() / (v_prior.norm() + 1e-6)
+        # print("energy ratio:", ratio.item())
+
         k_value = torch.full_like(t, float(self.k))
         k_value = torch.where(interval_mask, k_value, torch.zeros_like(t))
         return v_prior + k_value * (v_new - v_prior)
@@ -278,7 +279,32 @@ class Denoiser(nn.Module):
         )
         c = self.prior_net.t_embedder(t.flatten()) + self.prior_net.y_embedder(prior_labels)
         v_proj_patches = self.prior_net.final_layer(v_proj_tokens, c)
-        return self.prior_net.unpatchify(v_proj_patches, self.prior_net.patch_size)
+    #     # with torch.no_grad():
+    #     #     r_tok = v_proj_tokens.flatten(1).norm(dim=1) / (v_tokens.flatten(1).norm(dim=1) + 1e-6)
+    #     #     print("token proj ratio:", r_tok.mean().item(), r_tok.max().item())
+    #
+    #     return self.prior_net.unpatchify(v_proj_patches, self.prior_net.patch_size)
+    # def _project_prior_velocity(self, v_prior, t, prior_labels, sar_img):
+    #     v_tokens = self.prior_net.x_embedder(v_prior)
+    #     _, pyramid = self.sar_encoder(sar_img, return_pyramid=True)
+    #     bmat = self.subspace_head(pyramid["proj"])
+    #
+    #     v_proj_tokens = self.subspace_head.project_tokens(
+    #         v_tokens, bmat, reg_lambda=self.subspace_reg_lambda
+    #     )
+    #
+    #     c = self.prior_net.t_embedder(t.flatten()) + self.prior_net.y_embedder(prior_labels)
+    #     v_proj_patches = self.prior_net.final_layer(v_proj_tokens, c)
+        v_new = self.prior_net.unpatchify(v_proj_patches, self.prior_net.patch_size)
+
+        # === 关键新增：能量上限裁剪（保证不会放大步长） ===
+        eps = 1e-6
+        vn = v_new.flatten(1).norm(dim=1)  # [B]
+        vp = v_prior.flatten(1).norm(dim=1)  # [B]
+        alpha = torch.clamp(vp / (vn + eps), max=1.0)  # <=1
+        v_new = v_new * alpha.view(-1, 1, 1, 1)
+
+        return v_new
 
     @torch.no_grad()
     def _euler_step(self, z, t, t_next, labels, sar_img):
