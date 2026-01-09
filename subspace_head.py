@@ -48,12 +48,14 @@ class SubspaceHead(nn.Module):
             raise ValueError(f"x_tokens should be [B, T, {self.embed_dim}], got {x_tokens.shape}")
         if basis.dim() != 3 or basis.size(1) != self.embed_dim:
             raise ValueError(f"basis should be [B, {self.embed_dim}, k], got {basis.shape}")
-        btb = torch.matmul(basis.transpose(1, 2), basis)
-        k = btb.size(-1)
-        ident = torch.eye(k, device=btb.device, dtype=btb.dtype).unsqueeze(0)
-        btb = btb + reg_lambda * ident
-        xt = x_tokens.transpose(1, 2)
-        btx = torch.matmul(basis.transpose(1, 2), xt)
-        coeff = torch.linalg.solve(btb.float(), btx.float())
-        proj = torch.matmul(basis, coeff).transpose(1, 2)
+        device_type = x_tokens.device.type
+        with torch.autocast(device_type=device_type, enabled=False):
+            btb = torch.matmul(basis.float().transpose(1, 2), basis.float())
+            k = btb.size(-1)
+            ident = torch.eye(k, device=btb.device, dtype=btb.dtype).unsqueeze(0)
+            btb = btb + reg_lambda * ident
+            xt = x_tokens.float().transpose(1, 2)
+            btx = torch.matmul(basis.float().transpose(1, 2), xt)
+            coeff = torch.linalg.solve(btb, btx)
+            proj = torch.matmul(basis.float(), coeff).transpose(1, 2)
         return proj

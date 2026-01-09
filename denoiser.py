@@ -59,6 +59,11 @@ class Denoiser(nn.Module):
         self.steps = args.num_sampling_steps
         self.cfg_scale = args.cfg
         self.cfg_interval = (args.interval_min, args.interval_max)
+        self.k = getattr(args, "k", self.cfg_scale)
+        gamma_min = getattr(args, "gamma_min", self.cfg_interval[0])
+        gamma_max = getattr(args, "gamma_max", self.cfg_interval[1])
+        self.gamma_schedule = (gamma_min, gamma_max)
+        self.energy_tau = getattr(args, "energy_tau", 0.0)
 
         self.mapper_loss_weight = args.mapper_loss_weight
         self.proto_loss_weight = args.prototype_loss_weight
@@ -199,6 +204,8 @@ class Denoiser(nn.Module):
 
     @torch.no_grad()
     def _forward_sample(self, z, t, labels, sar_img):
+        if self.subspace_enabled:
+            return self._forward_subspace(z, t, labels, sar_img)
         # conditional
         x_cond = self.net(z, t.flatten(), labels, sar_img=sar_img)
         v_cond = (x_cond - z) / (1.0 - t).clamp_min(self.t_eps)
@@ -213,6 +220,37 @@ class Denoiser(nn.Module):
         cfg_scale_interval = torch.where(interval_mask, self.cfg_scale, 1.0)
 
         return v_uncond + cfg_scale_interval * (v_cond - v_uncond)
+
+    @torch.no_grad()
+    def _forward_subspace(self, z, t, labels, sar_img):
+        prior_labels = torch.full_like(labels, self.num_classes)
+        prior_x = self.prior_net(z, t.flatten(), prior_labels, sar_img=None)
+        v_prior = (prior_x - z) / (1.0 - t).clamp_min(self.t_eps)
+        if sar_img is None:
+            return v_prior
+
+        v_proj = self._project_prior_velocity(v_prior, t, prior_labels, sar_img)
+        v_new = v_proj + self.energy_tau * (v_prior - v_proj)
+
+        low, high = self.gamma_schedule
+        interval_mask = (t < high) & ((low == 0) | (t > low))
+        k_value = torch.full_like(t, float(self.k))
+        k_value = torch.where(interval_mask, k_value, torch.zeros_like(t))
+        return v_prior + k_value * (v_new - v_prior)
+
+    @torch.no_grad()
+    def _project_prior_velocity(self, v_prior, t, prior_labels, sar_img):
+        v_tokens = self.prior_net.x_embedder(v_prior)
+        _, pyramid = self.sar_encoder(sar_img, return_pyramid=True)
+        bmat = self.subspace_head(pyramid["proj"])
+        v_proj_tokens = self.subspace_head.project_tokens(
+            v_tokens,
+            bmat,
+            reg_lambda=self.subspace_reg_lambda,
+        )
+        c = self.prior_net.t_embedder(t.flatten()) + self.prior_net.y_embedder(prior_labels)
+        v_proj_patches = self.prior_net.final_layer(v_proj_tokens, c)
+        return self.prior_net.unpatchify(v_proj_patches, self.prior_net.patch_size)
 
     @torch.no_grad()
     def _euler_step(self, z, t, t_next, labels, sar_img):

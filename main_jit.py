@@ -98,7 +98,12 @@ def get_args_parser():
                         help='Concatenate SAR input (raw/DINO/both) along channel dimension')
     parser.add_argument('--sar_concat_channels', default=1, type=int,
                         help='Number of channels to concatenate when sar_concat_mode is enabled')
-
+    parser.add_argument('--sar_ms', action='store_true',
+                        help='Enable SAR multiscale structure preprocessing for generation/eval')
+    parser.add_argument('--sar_ms_mode', default='ms', type=str, choices=['ms', 'raw+ms'],
+                        help='SAR multiscale input mode when sar_ms is enabled')
+    parser.add_argument('--sar_ms_clip_max', default=2.0, type=float,
+                        help='Clip max for SAR log normalization in multiscale preprocessing')
     parser.add_argument('--seed', default=77, type=int)
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='Starting epoch')
@@ -119,12 +124,20 @@ def get_args_parser():
                         help='CFG interval min')
     parser.add_argument('--interval_max', default=1.0, type=float,
                         help='CFG interval max')
+    parser.add_argument('--k', default=1.0, type=float,
+                        help='Subspace projection strength (k)')
+    parser.add_argument('--gamma_min', default=0.0, type=float,
+                        help='Subspace projection schedule min (gamma)')
+    parser.add_argument('--gamma_max', default=1.0, type=float,
+                        help='Subspace projection schedule max (gamma)')
+    parser.add_argument('--energy_tau', default=0.0, type=float,
+                        help='Soft residual weight for projected velocity')
     parser.add_argument('--num_images', default=500, type=int,
                         help='Number of images to generate')
     parser.add_argument('--eval_freq', type=int, default=40,
                         help='Frequency (in epochs) for evaluation')
     parser.add_argument('--online_eval', action='store_true')
-    parser.add_argument('--evaluate_gen', action='store_true')
+    parser.add_argument('--evaluate_gen', default=True)
     parser.add_argument('--gen_bsz', type=int, default=256,
                         help='Generation batch size')
 
@@ -140,14 +153,14 @@ def get_args_parser():
     parser.add_argument('--class_num', default=1000, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results',
+    parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results/scene_650',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default=None,
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
     parser.add_argument('--log_freq', default=100, type=int)
-    parser.add_argument('--keep_outputs', action='store_true',
+    parser.add_argument('--keep_outputs', default=True,
                         help='Keep generated outputs after evaluation')
     parser.add_argument('--device', default='cuda',
                         help='Device to use for training/testing')

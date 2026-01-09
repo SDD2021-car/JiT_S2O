@@ -71,6 +71,13 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
 
 def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     model_without_ddp.eval()
+    if getattr(model_without_ddp, "subspace_enabled", False):
+        if hasattr(model_without_ddp, "prior_net"):
+            model_without_ddp.prior_net.eval()
+        if hasattr(model_without_ddp, "sar_encoder"):
+            model_without_ddp.sar_encoder.eval()
+        if hasattr(model_without_ddp, "subspace_head"):
+            model_without_ddp.subspace_head.eval()
     world_size = misc.get_world_size()
     local_rank = misc.get_rank()
     distributed = misc.is_dist_avail_and_initialized()
@@ -97,13 +104,30 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
     num_images = min(args.num_images, len(sar_dataset))
     num_steps = (num_images // (batch_size * world_size)) + 1
 
+    k_value = getattr(model_without_ddp, "k", getattr(model_without_ddp, "cfg_scale", None))
+    gamma_schedule = getattr(model_without_ddp, "gamma_schedule", getattr(model_without_ddp, "cfg_interval", None))
+    energy_tau = getattr(model_without_ddp, "energy_tau", None)
+    if isinstance(gamma_schedule, (list, tuple)) and len(gamma_schedule) == 2:
+        gamma_desc = f"{gamma_schedule[0]}-{gamma_schedule[1]}"
+    else:
+        gamma_desc = str(gamma_schedule)
+
     # Construct the folder name for saving generated images.
+    suffix_parts = [
+        model_without_ddp.method,
+        f"steps{model_without_ddp.steps}",
+    ]
+    if k_value is not None:
+        suffix_parts.append(f"k{k_value}")
+    if gamma_schedule is not None:
+        suffix_parts.append(f"gamma{gamma_desc}")
+    if energy_tau is not None:
+        suffix_parts.append(f"tau{energy_tau}")
+    suffix_parts.append(f"image{args.num_images}")
+    suffix_parts.append(f"res{args.img_size}")
     save_folder = os.path.join(
         args.output_dir,
-        "{}-steps{}-cfg{}-interval{}-{}-image{}-res{}".format(
-            model_without_ddp.method, model_without_ddp.steps, model_without_ddp.cfg_scale,
-            model_without_ddp.cfg_interval[0], model_without_ddp.cfg_interval[1], args.num_images, args.img_size
-        )
+        "-".join(suffix_parts)
     )
     print("Save to:", save_folder)
     if misc.get_rank() == 0 and not os.path.exists(save_folder):
@@ -157,11 +181,23 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
 
         sar_img = sar_img.to(torch.device(args.device))
         sar_img = sar_img.to(torch.float32).div_(255)
-        sar_img = sar_img * 2.0 - 1.0
+        if getattr(args, "sar_ms", False):
+            from sar_opt_pipeline.transforms import SARMultiscaleConfig, compute_sar_multiscale, normalize_sar
+
+            sar_raw = normalize_sar(sar_img, clip_max=args.sar_ms_clip_max)
+            sar_ms = compute_sar_multiscale(sar_raw, config=SARMultiscaleConfig())
+            if args.sar_ms_mode == "raw+ms":
+                sar_img = torch.cat([sar_raw, sar_ms], dim=1)
+            else:
+                sar_img = sar_ms
+            sar_img = sar_img * 2.0 - 1.0
+        else:
+            sar_img = sar_img * 2.0 - 1.0
         labels_gen = torch.zeros(sar_img.size(0), device=sar_img.device, dtype=torch.long)
 
-        with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            sampled_images = model_without_ddp.generate(sar_img, labels_gen)
+        with torch.no_grad():
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+                sampled_images = model_without_ddp.generate(sar_img, labels_gen)
 
         if distributed:
             torch.distributed.barrier()
@@ -214,7 +250,7 @@ def evaluate(model_without_ddp, args, epoch, batch_size=64, log_writer=None):
         )
         fid = metrics_dict['frechet_inception_distance']
         inception_score = metrics_dict['inception_score_mean']
-        postfix = "_cfg{}_res{}".format(model_without_ddp.cfg_scale, args.img_size)
+        postfix = "_k{}_res{}".format(k_value, args.img_size) if k_value is not None else "_res{}".format(args.img_size)
         log_writer.add_scalar('fid{}'.format(postfix), fid, epoch)
         log_writer.add_scalar('is{}'.format(postfix), inception_score, epoch)
         print("FID: {:.4f}, Inception Score: {:.4f}".format(fid, inception_score))
