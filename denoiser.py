@@ -91,6 +91,7 @@ class Denoiser(nn.Module):
             prior_ckpt_path = getattr(args, "prior_ckpt_path", None)
             if prior_ckpt_path:
                 prior_checkpoint = torch.load(prior_ckpt_path, map_location="cpu", weights_only=False)
+
                 if isinstance(prior_checkpoint, dict) and "model" in prior_checkpoint:
                     prior_state = prior_checkpoint["model"]
                 else:
@@ -103,6 +104,8 @@ class Denoiser(nn.Module):
             self.prior_net.eval()
             for param in self.prior_net.parameters():
                 param.requires_grad = False
+
+
 
     def drop_labels(self, labels):
         drop = torch.rand(labels.shape[0], device=labels.device) < self.label_drop_prob
@@ -163,6 +166,14 @@ class Denoiser(nn.Module):
             with torch.no_grad():
                 prior_labels = torch.full_like(labels, self.num_classes)
                 prior_x = self.prior_net(z, t.flatten(), prior_labels, sar_img=None)
+                # with torch.no_grad():
+                #     w = self.prior_net.final_layer.linear.weight
+                #     b = self.prior_net.final_layer.linear.bias
+                #     print("[PRIOR FINAL] w_abs_mean=", w.abs().mean().item(),
+                #           "w_abs_max=", w.abs().max().item(),
+                #           "b_abs_mean=", b.abs().mean().item(),
+                #           "b_abs_max=", b.abs().max().item())
+
                 v_prior = (prior_x - z) / (1 - t).clamp_min(self.t_eps)
                 v_tokens = self.net.x_embedder(v)
                 v_prior_tokens = self.net.x_embedder(v_prior)
@@ -247,6 +258,19 @@ class Denoiser(nn.Module):
         v_tokens = self.prior_net.x_embedder(v_prior)
         _, pyramid = self.sar_encoder(sar_img, return_pyramid=True)
         bmat = self.subspace_head(pyramid["proj"])
+
+        # def print_module_params(module, name):
+        #     print(f"\n{name} parameters:")
+        #     for n, p in module.named_parameters():
+        #         print(
+        #             f"{n:40s} | "
+        #             f"mean={p.data.mean():.4e}, "
+        #             f"std={p.data.std():.4e}, "
+        #             f"requires_grad={p.requires_grad}"
+        #         )
+        #         break  # 先看第一层即可
+        # print_module_params(self.sar_encoder, "SAR Encoder")
+        # print_module_params(self.subspace_head, "Subspace Head")
         v_proj_tokens = self.subspace_head.project_tokens(
             v_tokens,
             bmat,

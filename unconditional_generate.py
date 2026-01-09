@@ -50,6 +50,13 @@ def _save_image(img, path):
 def _unconditional_step(model, z, t):
     labels = torch.full((z.size(0),), model.num_classes, device=z.device, dtype=torch.long)
     x_pred = model.net(z, t.flatten(), labels, sar_img=None)
+    # with torch.no_grad():
+    #     w = model.net.final_layer.linear.weight
+    #     b = model.net.final_layer.linear.bias
+    #     print("[PRIOR FINAL] w_abs_mean=", w.abs().mean().item(),
+    #           "w_abs_max=", w.abs().max().item(),
+    #           "b_abs_mean=", b.abs().mean().item(),
+    #           "b_abs_max=", b.abs().max().item())
     v_pred = (x_pred - z) / (1.0 - t).clamp_min(model.t_eps)
     return v_pred
 
@@ -221,7 +228,6 @@ def main():
     model = Denoiser(args).to(device)
 
     checkpoint = load_checkpoint(model, args.resume, use_ema=args.use_ema)
-
     if args.mode == "train":
         run_training(args, model, device, checkpoint)
     else:
