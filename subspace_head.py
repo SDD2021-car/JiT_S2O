@@ -54,6 +54,6 @@ class SubspaceHead(nn.Module):
         btb = btb + reg_lambda * ident
         xt = x_tokens.transpose(1, 2)
         btx = torch.matmul(basis.transpose(1, 2), xt)
-        coeff = torch.linalg.solve(btb, btx)
+        coeff = torch.linalg.solve(btb.float(), btx.float())
         proj = torch.matmul(basis, coeff).transpose(1, 2)
         return proj

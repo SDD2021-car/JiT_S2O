@@ -83,6 +83,14 @@ class Denoiser(nn.Module):
                 torch.tensor(getattr(args, "subspace_ortho_weight_init", 0.1))
             )
             self.prior_net = copy.deepcopy(self.net)
+            prior_ckpt_path = getattr(args, "prior_ckpt_path", None)
+            if prior_ckpt_path:
+                prior_checkpoint = torch.load(prior_ckpt_path, map_location="cpu", weights_only=False)
+                if isinstance(prior_checkpoint, dict) and "model" in prior_checkpoint:
+                    prior_state = prior_checkpoint["model"]
+                else:
+                    prior_state = prior_checkpoint
+                self.prior_net.load_state_dict(prior_state, strict=True)
             self.prior_net.eval()
             for param in self.prior_net.parameters():
                 param.requires_grad = False

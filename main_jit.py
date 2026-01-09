@@ -92,6 +92,8 @@ def get_args_parser():
     parser.add_argument('--subspace_in_channels', default=1, type=int, help='Input channels for SAR encoder')
     parser.add_argument('--subspace_scheme', default='B', type=str, choices=['A', 'B'],
                         help='SAR encoder scheme for subspace head')
+    parser.add_argument('--prior_ckpt_path', default="/data/yjy_data/JiT", type=str,
+                        help='Path to prior network checkpoint (used for subspace training)')
     parser.add_argument('--sar_concat_mode', default='none', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
                         help='Concatenate SAR input (raw/DINO/both) along channel dimension')
     parser.add_argument('--sar_concat_channels', default=1, type=int,
@@ -140,7 +142,7 @@ def get_args_parser():
     # checkpointing
     parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default="/data/yjy_data/JiT",
+    parser.add_argument('--resume', default=None,
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
