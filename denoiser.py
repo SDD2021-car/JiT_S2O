@@ -22,6 +22,8 @@ class Denoiser(nn.Module):
             mapper_mlp_ratio=args.mapper_mlp_ratio,
             mapper_attn_drop=args.mapper_attn_drop,
             mapper_proj_drop=args.mapper_proj_drop,
+            cond_moe_num_experts=args.cond_moe_num_experts,
+            cond_moe_router_hidden_ratio=args.cond_moe_router_hidden_ratio,
             dino_repo=args.dino_repo,
             dino_model=args.dino_model,
             dino_pretrained=args.dino_pretrained,

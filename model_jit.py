@@ -8,6 +8,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 from util.model_util import VisionRotaryEmbeddingFast, get_2d_sincos_pos_embed, RMSNorm
+from moe_router import PatchwiseCondMoE
 
 
 def modulate(x, shift, scale):
@@ -331,7 +332,9 @@ class JiT(nn.Module):
         dino_ckpt_path=None,
         prototype_path=None,
         sar_concat_mode="none",
-        sar_concat_channels=1
+        sar_concat_channels=1,
+        cond_moe_num_experts=4,
+        cond_moe_router_hidden_ratio=1.0,
     ):
         super().__init__()
         self.sar_concat_mode = sar_concat_mode
@@ -412,6 +415,16 @@ class JiT(nn.Module):
         ])
         self.mapper_out = nn.Linear(hidden_size, self.dino_dim, bias=True)
         self.cond_proj = nn.Linear(self.dino_dim, hidden_size, bias=True)
+        if cond_moe_num_experts and cond_moe_num_experts > 0:
+            self.cond_moe = PatchwiseCondMoE(
+                router_dim=self.dino_dim,
+                expert_dim=self.dino_dim,
+                out_dim=hidden_size,
+                num_experts=cond_moe_num_experts,
+                router_hidden_ratio=cond_moe_router_hidden_ratio,
+            )
+        else:
+            self.cond_moe = None
         if self.sar_concat_mode in ("dino", "raw+dino"):
             self.sar_feat_proj = nn.Conv2d(self.dino_dim, self.sar_concat_channels, kernel_size=1, bias=True)
 
@@ -518,6 +531,8 @@ class JiT(nn.Module):
         nn.init.constant_(self.mapper_out.bias, 0)
         nn.init.xavier_uniform_(self.cond_proj.weight)
         nn.init.constant_(self.cond_proj.bias, 0)
+        if self.cond_moe is not None:
+            self.cond_moe.initialize_weights()
 
     def train(self, mode: bool = True):
         super().train(mode)
@@ -575,6 +590,8 @@ class JiT(nn.Module):
         mapped = self.mapper_out(mapped)
 
         cond_tokens = self.cond_proj(mapped)
+        if self.cond_moe is not None:
+            cond_tokens = cond_tokens + self.cond_moe(sar_tokens, mapped)
 
         mapper_loss = None
         proto_loss = None
