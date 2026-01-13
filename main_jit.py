@@ -117,7 +117,7 @@ def get_args_parser():
     parser.add_argument('--eval_freq', type=int, default=40,
                         help='Frequency (in epochs) for evaluation')
     parser.add_argument('--online_eval', action='store_true')
-    parser.add_argument('--evaluate_gen', action='store_true')
+    parser.add_argument('--evaluate_gen', default=False)
     parser.add_argument('--gen_bsz', type=int, default=256,
                         help='Generation batch size')
 
@@ -133,16 +133,16 @@ def get_args_parser():
     parser.add_argument('--class_num', default=1, type=int)
 
     # checkpointing
-    parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints',
+    parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints_SAR2OPT_SAR_DINO_MoE',
                         help='Directory to save outputs (empty for no saving)')
     parser.add_argument('--resume', default=None,
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
     parser.add_argument('--log_freq', default=100, type=int)
-    parser.add_argument('--keep_outputs', action='store_true',
+    parser.add_argument('--keep_outputs', default=True,
                         help='Keep generated outputs after evaluation')
-    parser.add_argument('--device', default='cuda',
+    parser.add_argument('--device', default='cuda:1',
                         help='Device to use for training/testing')
 
     # distributed training
@@ -190,10 +190,13 @@ def main(args):
     )
     print(dataset_train)
 
-    sampler_train = torch.utils.data.DistributedSampler(
-        dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
-    )
-    print("Sampler_train =", sampler_train)
+    if args.distributed:
+        sampler_train = torch.utils.data.DistributedSampler(
+            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+        )
+        print("Sampler_train =", sampler_train)
+    else:
+        sampler_train = torch.utils.data.RandomSampler(dataset_train)
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -223,8 +226,11 @@ def main(args):
     print("Actual lr: {:.2e}".format(args.lr))
     print("Effective batch size: %d" % eff_batch_size)
 
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
-    model_without_ddp = model.module
+    if args.distributed:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model_without_ddp = model.module
+    else:
+        model_without_ddp = model
 
     # Set up optimizer with weight decay adjustment for bias and norm layers
     param_groups = misc.add_weight_decay(model_without_ddp, args.weight_decay)
