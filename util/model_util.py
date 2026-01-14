@@ -125,13 +125,16 @@ class VisionRotaryEmbeddingFast(nn.Module):
             cos_pad = torch.ones(num_cls_token, D, dtype=cos_img.dtype, device=cos_img.device)
             sin_pad = torch.zeros(num_cls_token, D, dtype=sin_img.dtype, device=sin_img.device)
 
-            self.freqs_cos = torch.cat([cos_pad, cos_img], dim=0).cuda()  # [N_cls+N_img, D]
-            self.freqs_sin = torch.cat([sin_pad, sin_img], dim=0).cuda()
+            self.register_buffer("freqs_cos", torch.cat([cos_pad, cos_img], dim=0))  # [N_cls+N_img, D]
+            self.register_buffer("freqs_sin", torch.cat([sin_pad, sin_img], dim=0))
         else:
-            self.freqs_cos = freqs.cos().view(-1, freqs.shape[-1]).cuda()
-            self.freqs_sin = freqs.sin().view(-1, freqs.shape[-1]).cuda()
+            self.register_buffer("freqs_cos", freqs.cos().view(-1, freqs.shape[-1]))
+            self.register_buffer("freqs_sin", freqs.sin().view(-1, freqs.shape[-1]))
 
-    def forward(self, t): return  t * self.freqs_cos + rotate_half(t) * self.freqs_sin
+    def forward(self, t):
+        freqs_cos = self.freqs_cos.to(device=t.device, dtype=t.dtype)
+        freqs_sin = self.freqs_sin.to(device=t.device, dtype=t.dtype)
+        return t * freqs_cos + rotate_half(t) * freqs_sin
 
 
 class RMSNorm(nn.Module):

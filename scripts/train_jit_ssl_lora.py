@@ -170,13 +170,17 @@ def build_args():
     parser.add_argument("--out_dim", default=65536, type=int)
     parser.add_argument("--ibot", action="store_true", help="Enable patch-level self-distillation")
     parser.add_argument("--ibot_weight", default=0.5, type=float)
-    parser.add_argument("--device", default="cuda:7", type=str)
+    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--gpu", default=7, type=int, help="CUDA device index when using cuda")
     return parser
 
 
 def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
-    device = torch.device(args.device)
+    if args.device == "cuda":
+        device = torch.device(f"cuda:{args.gpu}")
+    else:
+        device = torch.device(args.device)
     cudnn.benchmark = True
 
     transform = MultiCropTransform(

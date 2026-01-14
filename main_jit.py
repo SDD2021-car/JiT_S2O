@@ -162,7 +162,7 @@ def get_args_parser():
     parser.add_argument('--log_freq', default=100, type=int)
     parser.add_argument('--keep_outputs', default=True,
                         help='Keep generated outputs after evaluation')
-    parser.add_argument('--device', default='cuda',
+    parser.add_argument('--device', default='cuda:7',
                         help='Device to use for training/testing')
 
     # distributed training

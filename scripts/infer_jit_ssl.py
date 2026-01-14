@@ -19,11 +19,15 @@ def build_args():
     parser.add_argument("--img_size", default=256, type=int)
     parser.add_argument("--batch_size", default=32, type=int)
     parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--gpu", default=0, type=int, help="CUDA device index when using cuda")
     return parser
 
 
 def main(args):
-    device = torch.device(args.device)
+    if args.device == "cuda":
+        device = torch.device(f"cuda:{args.gpu}")
+    else:
+        device = torch.device(args.device)
     transform = transforms.Compose([
         transforms.Resize((args.img_size, args.img_size), interpolation=transforms.InterpolationMode.BICUBIC),
         transforms.ToTensor(),
