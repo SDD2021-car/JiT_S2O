@@ -213,9 +213,12 @@ def main(args):
             print(f"[JiT SSL] Missing keys: {len(missing)}, unexpected keys: {len(unexpected)}")
     teacher = copy.deepcopy(student)
     student_head = DINOHead(student.hidden_size, out_dim=args.out_dim)
-    teacher_head = copy.deepcopy(student_head)
+    teacher_head = DINOHead(student.hidden_size, out_dim=args.out_dim)
+    teacher_head.load_state_dict(student_head.state_dict())
     patch_head = DINOHead(student.hidden_size, out_dim=args.out_dim) if args.ibot else None
-    patch_head_teacher = copy.deepcopy(patch_head) if args.ibot else None
+    patch_head_teacher = DINOHead(student.hidden_size, out_dim=args.out_dim) if args.ibot else None
+    if args.ibot:
+        patch_head_teacher.load_state_dict(patch_head.state_dict())
 
     student.to(device)
     teacher.to(device)
