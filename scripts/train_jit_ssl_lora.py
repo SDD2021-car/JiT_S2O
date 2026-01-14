@@ -1,3 +1,5 @@
+import sys
+sys.path.append("/data/yjy_data/FSPCG")
 import argparse
 import copy
 import math
@@ -148,16 +150,17 @@ def freeze_non_lora(model):
 
 def build_args():
     parser = argparse.ArgumentParser("JiT LoRA SSL", add_help=False)
-    parser.add_argument("--data_path", required=True, type=str, help="Path to optical image dataset")
-    parser.add_argument("--output_dir", required=True, type=str)
+    parser.add_argument("--data_path", default="/NAS_data/yjy/S2O_data_all_dataset/three_datasets", type=str, help="Path to optical image dataset")
+    parser.add_argument("--output_dir", default="/data/yjy_data/FSPCG/JiT_opt_pretrained", type=str)
+    parser.add_argument("--jit_ckpt_path", default="/data/yjy_data/JiT/checkpoint-last.pth", type=str, help="Path to pretrained JiT checkpoint (.pth)")
     parser.add_argument("--model", default="JiT-B/16", type=str)
     parser.add_argument("--img_size", default=256, type=int)
     parser.add_argument("--global_crop_size", default=256, type=int, choices=[224, 256])
     parser.add_argument("--local_crop_size", default=96, type=int)
     parser.add_argument("--global_crops_number", default=2, type=int)
     parser.add_argument("--local_crops_number", default=6, type=int)
-    parser.add_argument("--batch_size", default=32, type=int)
-    parser.add_argument("--epochs", default=300, type=int)
+    parser.add_argument("--batch_size", default=16, type=int)
+    parser.add_argument("--epochs", default=600, type=int)
     parser.add_argument("--lr", default=2e-4, type=float)
     parser.add_argument("--weight_decay", default=0.05, type=float)
     parser.add_argument("--lora_rank", default=8, type=int)
@@ -166,7 +169,7 @@ def build_args():
     parser.add_argument("--out_dim", default=65536, type=int)
     parser.add_argument("--ibot", action="store_true", help="Enable patch-level self-distillation")
     parser.add_argument("--ibot_weight", default=0.5, type=float)
-    parser.add_argument("--device", default="cuda", type=str)
+    parser.add_argument("--device", default="cuda:7", type=str)
     return parser
 
 
@@ -202,6 +205,12 @@ def main(args):
         lora_dropout=args.lora_dropout,
         use_dino=False,
     )
+    if args.jit_ckpt_path:
+        checkpoint = torch.load(args.jit_ckpt_path, map_location="cpu")
+        state = checkpoint.get("model", checkpoint.get("student", checkpoint))
+        missing, unexpected = student.load_state_dict(state, strict=False)
+        if missing or unexpected:
+            print(f"[JiT SSL] Missing keys: {len(missing)}, unexpected keys: {len(unexpected)}")
     teacher = copy.deepcopy(student)
     student_head = DINOHead(student.hidden_size, out_dim=args.out_dim)
     teacher_head = copy.deepcopy(student_head)
