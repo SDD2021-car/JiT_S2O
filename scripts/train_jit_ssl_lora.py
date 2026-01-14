@@ -81,8 +81,9 @@ class MultiCropTransform:
 
 
 def collate_multi_crop(batch):
-    views = list(zip(*batch))
-    return [torch.stack(view, dim=0) for view in views]
+    crops_list, _names = zip(*batch)
+    num_views = len(crops_list[0])
+    return [torch.stack([crops[i] for crops in crops_list], dim=0) for i in range(num_views)]
 
 
 class DINOHead(nn.Module):
@@ -156,7 +157,7 @@ def build_args():
     parser.add_argument("--model", default="JiT-B/16", type=str)
     parser.add_argument("--img_size", default=256, type=int)
     parser.add_argument("--global_crop_size", default=256, type=int, choices=[224, 256])
-    parser.add_argument("--local_crop_size", default=96, type=int)
+    parser.add_argument("--local_crop_size", default=256, type=int)
     parser.add_argument("--global_crops_number", default=2, type=int)
     parser.add_argument("--local_crops_number", default=6, type=int)
     parser.add_argument("--batch_size", default=16, type=int)
