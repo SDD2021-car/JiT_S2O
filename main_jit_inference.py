@@ -260,7 +260,7 @@ def main(args):
         model_without_ddp = model.module
     else:
         # 单卡/非分布式
-        model = model.cuda()
+        model = model.to(device)
         model_without_ddp = model
         # with torch.no_grad():
         #     w = model.prior_net.final_layer.linear.weight

@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
-
+from tqdm import tqdm
 from model_jit import JiT_models
 from util.datasets import ImageDirDataset
 from util.lora import LoRALinear
@@ -172,6 +172,7 @@ def build_args():
     parser.add_argument("--ibot_weight", default=0.5, type=float)
     parser.add_argument("--device", default="cuda", type=str)
     parser.add_argument("--gpu", default=7, type=int, help="CUDA device index when using cuda")
+    parser.add_argument("--N", default=100, type=int, help="save epoch")
     return parser
 
 
@@ -251,14 +252,15 @@ def main(args):
     dino_loss = DINOLoss(args.out_dim).to(device)
 
     momentum_base = 0.996
-    for epoch in range(args.epochs):
+    for epoch in tqdm(range(args.epochs), desc="Epochs"):
         student.train()
         student_head.train()
         if args.ibot:
             patch_head.train()
         dino_loss.set_teacher_temp(temp_schedule(epoch))
 
-        for crops in loader:
+        epoch_loader = tqdm(loader, desc=f"Epoch {epoch + 1}/{args.epochs}", leave=False)
+        for crops in epoch_loader:
             crops = [crop.to(device, non_blocking=True) for crop in crops]
             global_views = crops[: args.global_crops_number]
             all_views = crops
@@ -323,7 +325,8 @@ def main(args):
         }
         if args.ibot:
             ckpt["patch_head"] = patch_head.state_dict()
-        torch.save(ckpt, os.path.join(args.output_dir, f"jit_ssl_epoch_{epoch:04d}.pth"))
+        if (epoch + 1) % args.N == 0:
+            torch.save(ckpt, os.path.join(args.output_dir, f"jit_ssl_epoch_{epoch:04d}.pth"))
 
 
 if __name__ == "__main__":
