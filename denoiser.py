@@ -188,8 +188,10 @@ class Denoiser(nn.Module):
             ortho_loss = self.subspace_head.orthogonality_loss(bmat)
             match_weight = F.softplus(self.subspace_match_weight)
             ortho_weight = F.softplus(self.subspace_ortho_weight)
+            # print("loss: ", loss)
+            # print("token_loss: ",token_loss)
             loss = loss + match_weight * token_loss + ortho_weight * ortho_loss
-
+            print(loss)
         return loss
 
     @torch.no_grad()
@@ -198,8 +200,9 @@ class Denoiser(nn.Module):
             labels = torch.zeros(sar_img.size(0), device=sar_img.device, dtype=torch.long)
         device = sar_img.device
         bsz = sar_img.size(0)
+        eps = self.t_eps
         z = self.noise_scale * torch.randn(bsz, 3, self.img_size, self.img_size, device=device)
-        timesteps = torch.linspace(0.0, 1.0, self.steps + 1, device=device).view(-1, *([1] * z.ndim)).expand(-1, bsz, -1, -1, -1)
+        timesteps = torch.linspace(0.0, 1.0 - eps, self.steps + 1, device=device).view(-1, *([1] * z.ndim)).expand(-1, bsz, -1, -1, -1)
 
         if self.method == "euler":
             stepper = self._euler_step

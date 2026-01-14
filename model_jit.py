@@ -8,6 +8,7 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 from util.model_util import VisionRotaryEmbeddingFast, get_2d_sincos_pos_embed, RMSNorm
+from util.lora import LoRALinear
 
 
 def modulate(x, shift, scale):
@@ -105,7 +106,18 @@ def scaled_dot_product_attention(query, key, value, dropout_p=0.0) -> torch.Tens
 
 
 class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_norm=True, attn_drop=0., proj_drop=0.):
+    def __init__(
+        self,
+        dim,
+        num_heads=8,
+        qkv_bias=True,
+        qk_norm=True,
+        attn_drop=0.0,
+        proj_drop=0.0,
+        lora_rank=0,
+        lora_alpha=1.0,
+        lora_dropout=0.0,
+    ):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -113,9 +125,13 @@ class Attention(nn.Module):
         self.q_norm = RMSNorm(head_dim) if qk_norm else nn.Identity()
         self.k_norm = RMSNorm(head_dim) if qk_norm else nn.Identity()
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        if lora_rank > 0:
+            self.qkv = LoRALinear(dim, dim * 3, r=lora_rank, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=qkv_bias)
+            self.proj = LoRALinear(dim, dim, r=lora_rank, lora_alpha=lora_alpha, lora_dropout=lora_dropout, bias=True)
+        else:
+            self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+            self.proj = nn.Linear(dim, dim, bias=True)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x, rope):
@@ -218,11 +234,30 @@ class FinalLayer(nn.Module):
 
 
 class JiTBlock(nn.Module):
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0, attn_drop=0.0, proj_drop=0.0):
+    def __init__(
+        self,
+        hidden_size,
+        num_heads,
+        mlp_ratio=4.0,
+        attn_drop=0.0,
+        proj_drop=0.0,
+        lora_rank=0,
+        lora_alpha=1.0,
+        lora_dropout=0.0,
+    ):
         super().__init__()
         self.norm1 = RMSNorm(hidden_size, eps=1e-6)
-        self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
-                              attn_drop=attn_drop, proj_drop=proj_drop)
+        self.attn = Attention(
+            hidden_size,
+            num_heads=num_heads,
+            qkv_bias=True,
+            qk_norm=True,
+            attn_drop=attn_drop,
+            proj_drop=proj_drop,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
         self.norm2 = RMSNorm(hidden_size, eps=1e-6)
         self.cross_attn = CrossAttention(hidden_size, num_heads=num_heads, qkv_bias=True, qk_norm=True,
                                          attn_drop=attn_drop, proj_drop=proj_drop)
@@ -356,7 +391,10 @@ class JiT(nn.Module):
         prototype_path=None,
         sar_concat_mode="none",
         sar_concat_channels=1,
-        use_dino=True
+        use_dino=True,
+        lora_rank=0,
+        lora_alpha=1.0,
+        lora_dropout=0.0,
     ):
         super().__init__()
         self.use_dino = use_dino
@@ -416,9 +454,16 @@ class JiT(nn.Module):
         # transformer
         block_cls = JiTBlock if self.use_dino else JiTBlockUncond
         self.blocks = nn.ModuleList([
-            block_cls(hidden_size, num_heads, mlp_ratio=mlp_ratio,
-                      attn_drop=attn_drop if (depth // 4 * 3 > i >= depth // 4) else 0.0,
-                      proj_drop=proj_drop if (depth // 4 * 3 > i >= depth // 4) else 0.0)
+            block_cls(
+                hidden_size,
+                num_heads,
+                mlp_ratio=mlp_ratio,
+                attn_drop=attn_drop if (depth // 4 * 3 > i >= depth // 4) else 0.0,
+                proj_drop=proj_drop if (depth // 4 * 3 > i >= depth // 4) else 0.0,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+            )
             for i in range(depth)
         ])
 
@@ -693,6 +738,40 @@ class JiT(nn.Module):
         if return_mapper_loss:
             return output, {"mapper_loss": mapper_loss, "proto_loss": proto_loss}
         return output
+
+    def encode_features(self, x, t=None, y=None, return_tokens=False):
+        if t is None:
+            t = torch.zeros(x.size(0), device=x.device)
+        if y is None:
+            y = torch.zeros(x.size(0), device=x.device, dtype=torch.long)
+
+        t_emb = self.t_embedder(t)
+        y_emb = self.y_embedder(y)
+        c = t_emb + y_emb
+
+        x = self.x_embedder(x)
+        x += self.pos_embed
+
+        for i, block in enumerate(self.blocks):
+            if self.in_context_len > 0 and i == self.in_context_start:
+                in_context_tokens = y_emb.unsqueeze(1).repeat(1, self.in_context_len, 1)
+                in_context_tokens += self.in_context_posemb
+                x = torch.cat([in_context_tokens, x], dim=1)
+            x = block(
+                x,
+                c,
+                cond=None,
+                feat_rope=self.feat_rope if i < self.in_context_start else self.feat_rope_incontext,
+                cond_rope=self.cond_rope,
+            )
+
+        if self.in_context_len > 0:
+            x = x[:, self.in_context_len:]
+
+        pooled = x.mean(dim=1)
+        if return_tokens:
+            return pooled, x
+        return pooled
 
 
 def JiT_B_16(**kwargs):

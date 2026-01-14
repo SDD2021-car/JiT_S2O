@@ -105,7 +105,7 @@ def get_args_parser():
     parser.add_argument('--sar_ms_clip_max', default=2.0, type=float,
                         help='Clip max for SAR log normalization in multiscale preprocessing')
     parser.add_argument('--seed', default=77, type=int)
-    parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
+    parser.add_argument('--start_epoch', default=650, type=int, metavar='N',
                         help='Starting epoch')
     parser.add_argument('--num_workers', default=12, type=int)
     parser.add_argument('--pin_mem', action='store_true',
@@ -155,7 +155,7 @@ def get_args_parser():
     # checkpointing
     parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default=None,
+    parser.add_argument('--resume', default="/data/yjy_data/FSPCG/conditional_results",
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')

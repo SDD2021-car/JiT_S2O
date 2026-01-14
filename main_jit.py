@@ -45,7 +45,7 @@ def get_args_parser():
     parser.add_argument('--proj_dropout', type=float, default=0.0, help='Projection dropout rate')
 
     # training
-    parser.add_argument('--epochs', default=1000, type=int)
+    parser.add_argument('--epochs', default=1200, type=int)
     parser.add_argument('--warmup_epochs', type=int, default=5, metavar='N',
                         help='Epochs to warm up LR')
     parser.add_argument('--batch_size', default=8, type=int,
@@ -116,7 +116,7 @@ def get_args_parser():
     # sampling
     parser.add_argument('--sampling_method', default='heun', type=str,
                         help='ODE samping method')
-    parser.add_argument('--num_sampling_steps', default=50, type=int,
+    parser.add_argument('--num_sampling_steps', default=100, type=int,
                         help='Sampling steps')
     parser.add_argument('--cfg', default=1.0, type=float,
                         help='Classifier-free guidance factor')
@@ -137,7 +137,7 @@ def get_args_parser():
     parser.add_argument('--eval_freq', type=int, default=40,
                         help='Frequency (in epochs) for evaluation')
     parser.add_argument('--online_eval', action='store_true')
-    parser.add_argument('--evaluate_gen', default=False)
+    parser.add_argument('--evaluate_gen', default=True)
     parser.add_argument('--gen_bsz', type=int, default=8,
                         help='Generation batch size')
 
@@ -155,12 +155,12 @@ def get_args_parser():
     # checkpointing
     parser.add_argument('--output_dir', default='/data/yjy_data/FSPCG/conditional_results',
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default=None,
+    parser.add_argument('--resume', default="/data/yjy_data/FSPCG/conditional_results",
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
     parser.add_argument('--log_freq', default=100, type=int)
-    parser.add_argument('--keep_outputs', default=False,
+    parser.add_argument('--keep_outputs', default=True,
                         help='Keep generated outputs after evaluation')
     parser.add_argument('--device', default='cuda',
                         help='Device to use for training/testing')
