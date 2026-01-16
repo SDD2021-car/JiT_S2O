@@ -87,6 +87,20 @@ def get_args_parser():
     parser.add_argument('--dino_pretrained', action='store_true', help='Load pretrained DINOv3 weights')
     parser.add_argument('--dino_ckpt_path', default="/data/yjy_data/JiT/dinov3_vitl16_pretrain_sat493m-eadcf0ff.pth", type=str, help='Local path to DINOv3 checkpoint')
     parser.set_defaults(dino_pretrained=True)
+<<<<<<< Updated upstream
+=======
+    parser.add_argument('--disable_dino', default=False, help='Disable DINOv3 components')
+    parser.add_argument('--enable_subspace', default=False, help='Enable subspace head training')
+    parser.add_argument('--subspace_rank', default=16, type=int, help='Low-rank dimension for subspace basis')
+    parser.add_argument('--subspace_reg_lambda', default=1e-4, type=float, help='Projection regularization lambda')
+    parser.add_argument('--subspace_match_weight_init', default=1.0, type=float, help='Init weight for token loss')
+    parser.add_argument('--subspace_ortho_weight_init', default=0.1, type=float, help='Init weight for ortho loss')
+    parser.add_argument('--subspace_in_channels', default=1, type=int, help='Input channels for SAR encoder')
+    parser.add_argument('--subspace_scheme', default='B', type=str, choices=['A', 'B'],
+                        help='SAR encoder scheme for subspace head')
+    parser.add_argument('--prior_ckpt_path', default="/data/yjy_data/JiT/checkpoint-last.pth", type=str,
+                        help='Path to prior network checkpoint (used for subspace training)')
+>>>>>>> Stashed changes
     parser.add_argument('--sar_concat_mode', default='raw+dino', type=str, choices=['none', 'raw', 'dino', 'raw+dino'],
                         help='Concatenate SAR input (raw/DINO/both) along channel dimension')
     parser.add_argument('--sar_concat_channels', default=1, type=int,
@@ -122,6 +136,7 @@ def get_args_parser():
                         help='Generation batch size')
 
     # dataset
+<<<<<<< Updated upstream
     parser.add_argument('--sar_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainA', type=str,
                         help='Path to the SAR training dataset')
     parser.add_argument('--opt_train_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/trainB', type=str,
@@ -129,20 +144,37 @@ def get_args_parser():
     parser.add_argument('--sar_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/testA', type=str,
                         help='Path to the SAR testing dataset')
     parser.add_argument('--opt_test_path', default='/NAS_data/yjy/Parallel-GAN-main/Parallel-GAN-main/datasets/sar2opt/testB', type=str,
+=======
+    parser.add_argument('--sar_train_path', default='/NAS_data/yjy/out/trainA', type=str,
+                        help='Path to the SAR training dataset')
+    parser.add_argument('--opt_train_path', default='/NAS_data/yjy/out/trainB', type=str,
+                        help='Path to the optical training dataset')
+    parser.add_argument('--sar_test_path', default='/NAS_data/yjy/out/testA', type=str,
+                        help='Path to the SAR testing dataset')
+    parser.add_argument('--opt_test_path', default='/NAS_data/yjy/out/testB', type=str,
+>>>>>>> Stashed changes
                         help='Path to the optical testing dataset')
     parser.add_argument('--class_num', default=1, type=int)
 
     # checkpointing
+<<<<<<< Updated upstream
     parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints_SAR2OPT_SAR_DINO_MoE',
+=======
+    parser.add_argument('--output_dir', default='/NAS_data/yjy/JiT_S2O/checkpoints_GF3_process',
+>>>>>>> Stashed changes
                         help='Directory to save outputs (empty for no saving)')
-    parser.add_argument('--resume', default=None,
+    parser.add_argument('--resume', default='/NAS_data/yjy/JiT_S2O/checkpoints_GF3_process',
                         help='Folder that contains checkpoint to resume from')
     parser.add_argument('--save_last_freq', type=int, default=5,
                         help='Frequency (in epochs) to save checkpoints')
     parser.add_argument('--log_freq', default=100, type=int)
     parser.add_argument('--keep_outputs', default=True,
                         help='Keep generated outputs after evaluation')
+<<<<<<< Updated upstream
     parser.add_argument('--device', default='cuda:1',
+=======
+    parser.add_argument('--device', default='cuda:7',
+>>>>>>> Stashed changes
                         help='Device to use for training/testing')
 
     # distributed training
@@ -153,6 +185,12 @@ def get_args_parser():
     parser.add_argument('--dist_url', default='env://',
                         help='URL used to set up distributed training')
 
+<<<<<<< Updated upstream
+=======
+    parser.add_argument('--gpu', default=7, type=int, help='GPU id to use.')
+    parser.add_argument('--distributed', default=False, help='Use DDP')
+
+>>>>>>> Stashed changes
     return parser
 
 
@@ -230,6 +268,11 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
     else:
+<<<<<<< Updated upstream
+=======
+        # 单卡/非分布式
+        model = model.to(device)
+>>>>>>> Stashed changes
         model_without_ddp = model
 
     # Set up optimizer with weight decay adjustment for bias and norm layers

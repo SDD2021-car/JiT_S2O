@@ -92,18 +92,38 @@ class LabelEmbedder(nn.Module):
         return embeddings
 
 
+# def scaled_dot_product_attention(query, key, value, dropout_p=0.0) -> torch.Tensor:
+#     L, S = query.size(-2), key.size(-2)
+#     scale_factor = 1 / math.sqrt(query.size(-1))
+#     attn_bias = torch.zeros(query.size(0), 1, L, S, dtype=query.dtype).cuda()
+#
+#     with torch.cuda.amp.autocast(enabled=False):
+#         attn_weight = query.float() @ key.float().transpose(-2, -1) * scale_factor
+#     attn_weight += attn_bias
+#     attn_weight = torch.softmax(attn_weight, dim=-1)
+#     attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+#     return attn_weight @ value
 def scaled_dot_product_attention(query, key, value, dropout_p=0.0) -> torch.Tensor:
     L, S = query.size(-2), key.size(-2)
     scale_factor = 1 / math.sqrt(query.size(-1))
-    attn_bias = torch.zeros(query.size(0), 1, L, S, dtype=query.dtype).cuda()
+
+    # ✅ device / dtype 跟 query 一致
+    attn_bias = torch.zeros(
+        query.size(0), 1, L, S,
+        dtype=query.dtype,
+        device=query.device
+    )
 
     with torch.cuda.amp.autocast(enabled=False):
         attn_weight = query.float() @ key.float().transpose(-2, -1) * scale_factor
-    attn_weight += attn_bias
-    attn_weight = torch.softmax(attn_weight, dim=-1)
-    attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
-    return attn_weight @ value
 
+    attn_weight = attn_weight + attn_bias  # attn_bias 会自动 broadcast
+    attn_weight = torch.softmax(attn_weight, dim=-1)
+
+    # ✅ dropout 更常见写法（但仍保持你“始终 train=True”的行为）
+    attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+
+    return attn_weight @ value
 
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=True, qk_norm=True, attn_drop=0., proj_drop=0.):

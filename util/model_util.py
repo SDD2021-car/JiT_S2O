@@ -8,7 +8,7 @@ from math import pi
 import torch
 from torch import nn
 import numpy as np
-
+import math
 from einops import rearrange, repeat
 
 
@@ -89,18 +89,19 @@ class VisionRotaryEmbeddingFast(nn.Module):
         dim,
         pt_seq_len=16,
         ft_seq_len=None,
-        custom_freqs = None,
-        freqs_for = 'lang',
-        theta = 10000,
-        max_freq = 10,
-        num_freqs = 1,
-        num_cls_token = 0
+        custom_freqs=None,
+        freqs_for='lang',
+        theta=10000,
+        max_freq=10,
+        num_freqs=1,
+        num_cls_token=0
     ):
         super().__init__()
-        if custom_freqs:
+
+        if custom_freqs is not None:
             freqs = custom_freqs
         elif freqs_for == 'lang':
-            freqs = 1. / (theta ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
+            freqs = 1. / (theta ** (torch.arange(0, dim, 2).float() / dim))
         elif freqs_for == 'pixel':
             freqs = torch.linspace(1., max_freq / 2, dim // 2) * pi
         elif freqs_for == 'constant':
@@ -108,30 +109,33 @@ class VisionRotaryEmbeddingFast(nn.Module):
         else:
             raise ValueError(f'unknown modality {freqs_for}')
 
-        if ft_seq_len is None: ft_seq_len = pt_seq_len
-        t = torch.arange(ft_seq_len) / ft_seq_len * pt_seq_len
+        if ft_seq_len is None:
+            ft_seq_len = pt_seq_len
 
-        freqs = torch.einsum('..., f -> ... f', t, freqs)
-        freqs = repeat(freqs, '... n -> ... (n r)', r = 2)
-        freqs = broadcat((freqs[:, None, :], freqs[None, :, :]), dim = -1)
+        t = torch.arange(ft_seq_len).float() / ft_seq_len * pt_seq_len
+        freqs = torch.einsum('n, f -> n f', t, freqs)
+        freqs = repeat(freqs, 'n d -> n (d r)', r=2)
+        freqs = broadcat((freqs[:, None, :], freqs[None, :, :]), dim=-1)
+
+        freqs_flat = freqs.view(-1, freqs.shape[-1])
+        cos_img = freqs_flat.cos()
+        sin_img = freqs_flat.sin()
 
         if num_cls_token > 0:
-            freqs_flat = freqs.view(-1, freqs.shape[-1])  # [N_img, D]
-            cos_img = freqs_flat.cos()
-            sin_img = freqs_flat.sin()
+            D = cos_img.shape[1]
+            cos_pad = torch.ones(num_cls_token, D)
+            sin_pad = torch.zeros(num_cls_token, D)
 
-            # prepend in-context cls token
-            N_img, D = cos_img.shape
-            cos_pad = torch.ones(num_cls_token, D, dtype=cos_img.dtype, device=cos_img.device)
-            sin_pad = torch.zeros(num_cls_token, D, dtype=sin_img.dtype, device=sin_img.device)
+            cos_img = torch.cat([cos_pad, cos_img], dim=0)
+            sin_img = torch.cat([sin_pad, sin_img], dim=0)
 
-            self.freqs_cos = torch.cat([cos_pad, cos_img], dim=0).cuda()  # [N_cls+N_img, D]
-            self.freqs_sin = torch.cat([sin_pad, sin_img], dim=0).cuda()
-        else:
-            self.freqs_cos = freqs.cos().view(-1, freqs.shape[-1]).cuda()
-            self.freqs_sin = freqs.sin().view(-1, freqs.shape[-1]).cuda()
+        # ✅ 正确做法：register_buffer
+        self.register_buffer("freqs_cos", cos_img, persistent=False)
+        self.register_buffer("freqs_sin", sin_img, persistent=False)
 
-    def forward(self, t): return  t * self.freqs_cos + rotate_half(t) * self.freqs_sin
+    def forward(self, t):
+        return t * self.freqs_cos + rotate_half(t) * self.freqs_sin
+
 
 
 class RMSNorm(nn.Module):

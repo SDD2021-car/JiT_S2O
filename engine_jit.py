@@ -39,7 +39,7 @@ def train_one_epoch(model, model_without_ddp, data_loader, optimizer, device, ep
         opt_img = opt_img * 2.0 - 1.0
         labels = torch.zeros(opt_img.size(0), device=device, dtype=torch.long)
 
-        with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             loss = model(opt_img, sar_img, labels)
 
         loss_value = loss.item()
