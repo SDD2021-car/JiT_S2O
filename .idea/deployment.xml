@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="yjy@10.104.6.25:2200 (65)" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
-    <option name="confirmBeforeUploading" value="false" />
+  <component name="PublishConfigData">
     <serverData>
       <paths name="hjf@10.104.6.173:22">
         <serverdata>
@@ -755,11 +754,8 @@
       <paths name="yjy@10.104.6.25:2200 (61)">
         <serverdata>
           <mappings>
-            <mapping deploy="/data/yjy_data/JiT" local="$PROJECT_DIR$" />
+            <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
-          <excludedPaths>
-            <excludedPath path="/data/yjy_data/JiT/dinov3-main" />
-          </excludedPaths>
         </serverdata>
       </paths>
       <paths name="yjy@10.104.6.25:2200 (62)">
@@ -786,7 +782,14 @@
       <paths name="yjy@10.104.6.25:2200 (65)">
         <serverdata>
           <mappings>
-            <mapping deploy="/data/yjy_data/JiT" local="$PROJECT_DIR$" />
+            <mapping local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="yjy@10.104.6.25:2200 (66)">
+        <serverdata>
+          <mappings>
+            <mapping local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
@@ -1099,6 +1102,5 @@
         </serverdata>
       </paths>
     </serverData>
-    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>
